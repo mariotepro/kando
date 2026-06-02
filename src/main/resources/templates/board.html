@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Kando</title>
+    <link rel="stylesheet" th:href="@{/css/main.css}"/>
+</head>
+<body class="app-body">
+
+<!-- ── Navbar ──────────────────────────────────────────────────────────────── -->
+<nav class="navbar">
+    <div class="navbar-brand">
+        <span class="logo-icon">◈</span>
+        <span class="logo-text">kando</span>
+    </div>
+    <div class="navbar-actions">
+        <button class="btn btn-primary btn-sm" id="btnCreateTask">+ Crear</button>
+        <a th:href="@{/labels}" class="btn btn-ghost btn-sm">Etiquetas</a>
+        <a th:href="@{/export/md}" class="btn btn-ghost btn-sm">Exportar MD</a>
+        <button class="btn btn-ghost btn-sm" id="btnEditMode">Editar columnas</button>
+        <form th:action="@{/logout}" method="post" style="display:inline">
+            <button type="submit" class="btn btn-ghost btn-sm">
+                <sec:authentication property="name"/> · Salir
+            </button>
+        </form>
+    </div>
+</nav>
+
+<!-- ── Board ───────────────────────────────────────────────────────────────── -->
+<div class="board-wrapper">
+    <div class="board" id="board">
+        <div th:each="col : ${columns}"
+             class="column"
+             th:data-col-id="${col.id}">
+
+            <div class="column-header">
+                <span class="column-title" th:text="${col.name}">Columna</span>
+                <div class="column-edit-actions" style="display:none">
+                    <button class="btn btn-icon" th:data-col-id="${col.id}"
+                            onclick="renameColumn(this)">✏️</button>
+                    <button class="btn btn-icon danger" th:data-col-id="${col.id}"
+                            onclick="deleteColumn(this)">🗑</button>
+                    <span class="drag-handle-col" title="Arrastrar columna">⠿</span>
+                </div>
+            </div>
+
+            <div class="task-list" th:data-col-id="${col.id}">
+                <div th:each="task : ${col.tasks}"
+                     class="task-card"
+                     th:data-task-id="${task.id}"
+                     th:style="${not #sets.isEmpty(task.labels)} ?
+                         'border-left: 4px solid ' + ${task.labels.iterator().next().color} : ''">
+                    <span class="task-title" th:text="${task.title}">Tarea</span>
+                    <div class="task-meta">
+                        <span th:each="lbl : ${task.labels}"
+                              class="label-chip"
+                              th:style="'background:' + ${lbl.color} + '22; color:' + ${lbl.color}"
+                              th:text="${lbl.name}">tag</span>
+                        <span th:if="${task.dueDate != null}" class="due-date"
+                              th:text="${#temporals.format(task.dueDate,'dd MMM')}">01 Ene</span>
+                    </div>
+                    <button class="task-open-btn" th:data-task-id="${task.id}"
+                            onclick="openTask(this)">···</button>
+                </div>
+            </div>
+
+            <div class="quick-add">
+                <input type="text" class="quick-add-input" placeholder="Añadir tarea… (#etiqueta)"
+                       th:data-col-id="${col.id}"/>
+                <button class="btn btn-ghost btn-sm quick-add-btn"
+                        th:data-col-id="${col.id}" onclick="quickAdd(this)">+ Añadir</button>
+            </div>
+        </div>
+
+        <!-- Add column button — only visible in edit mode -->
+        <div class="add-column-btn" id="addColumnBtn" style="display:none">
+            <button class="btn btn-ghost" onclick="addColumn()">+ Columna</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Task modal ──────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="taskModal" style="display:none" onclick="closeModalOutside(event)">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="modalTitle">Tarea</h2>
+            <button class="btn btn-icon" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="field">
+                <label>Título</label>
+                <input type="text" id="modalTaskTitle" maxlength="512"/>
+            </div>
+            <div class="field">
+                <label>Notas</label>
+                <textarea id="modalTaskNotes" rows="4" placeholder="Notas…"></textarea>
+            </div>
+            <div class="field">
+                <label>Fecha límite</label>
+                <input type="date" id="modalTaskDue"/>
+            </div>
+            <div class="field">
+                <label>Etiquetas</label>
+                <div id="modalLabels" class="label-picker"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger btn-sm" onclick="deleteCurrentTask()">Eliminar</button>
+            <div style="flex:1"></div>
+            <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
+            <button class="btn btn-primary btn-sm" onclick="saveTask()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Data for JS -->
+<script th:inline="javascript">
+    window.KANDO = {
+        labels: /*[[${labels}]]*/ [],
+        csrfToken: /*[[${_csrf != null ? _csrf.token : ''}]]*/ ''
+    };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script th:src="@{/js/board.js}"></script>
+</body>
+</html>

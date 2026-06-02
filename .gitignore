@@ -1,0 +1,25 @@
+## Maven
+target/
+*.class
+*.jar
+*.war
+
+## IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+## Spring Boot
+application-local.properties
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Logs
+*.log
+logs/
+
+## Docker
+docker-compose.override.yml

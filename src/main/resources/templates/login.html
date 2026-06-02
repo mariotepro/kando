@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Kando — Acceder</title>
+    <link rel="stylesheet" th:href="@{/css/main.css}"/>
+</head>
+<body class="auth-body">
+
+<div class="auth-card">
+    <div class="auth-logo">
+        <span class="logo-icon">◈</span>
+        <span class="logo-text">kando</span>
+    </div>
+
+    <div th:if="${param.error}" class="alert alert-error">
+        Usuario o contraseña incorrectos.
+    </div>
+    <div th:if="${param.logout}" class="alert alert-info">
+        Sesión cerrada.
+    </div>
+
+    <form th:action="@{/login}" method="post">
+        <div class="field">
+            <label for="username">Usuario</label>
+            <input id="username" name="username" type="text" autocomplete="username"
+                   autofocus placeholder="tu usuario"/>
+        </div>
+        <div class="field">
+            <label for="password">Contraseña</label>
+            <input id="password" name="password" type="password" autocomplete="current-password"
+                   placeholder="••••••••"/>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Entrar</button>
+    </form>
+</div>
+
+</body>
+</html>

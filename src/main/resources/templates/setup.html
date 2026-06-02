@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Kando — Configuración de base de datos</title>
+    <link rel="stylesheet" th:href="@{/css/main.css}"/>
+</head>
+<body class="auth-body">
+
+<div class="setup-card">
+    <div class="auth-logo">
+        <span class="logo-icon">◈</span>
+        <span class="logo-text">kando</span>
+    </div>
+
+    <h2 class="setup-title">Actualización de base de datos</h2>
+
+    <div th:if="${success}" class="alert alert-success" th:text="${success}"></div>
+    <div th:if="${error}"   class="alert alert-error"   th:text="${error}"></div>
+
+    <!-- Pending migrations -->
+    <div th:if="${not #lists.isEmpty(pendingMigrations)}" class="setup-section">
+        <p class="setup-desc">
+            Se han detectado <strong th:text="${#lists.size(pendingMigrations)}">N</strong>
+            migración(es) pendiente(s). Deben aplicarse antes de continuar.
+        </p>
+        <table class="migration-table">
+            <thead>
+                <tr><th>Versión</th><th>Descripción</th><th>Estado</th></tr>
+            </thead>
+            <tbody>
+                <tr th:each="m : ${pendingMigrations}">
+                    <td th:text="${m.version}">1</td>
+                    <td th:text="${m.description}">Init</td>
+                    <td><span class="badge badge-pending">PENDIENTE</span></td>
+                </tr>
+            </tbody>
+        </table>
+        <form th:action="@{/setup/migrate}" method="post">
+            <button type="submit" class="btn btn-primary btn-full" style="margin-top:1rem;">
+                Aplicar cambios en base de datos
+            </button>
+        </form>
+    </div>
+
+    <!-- Admin creation -->
+    <div th:if="${needsAdmin}" class="setup-section">
+        <p class="setup-desc">No hay ningún usuario creado. Crea el usuario administrador para continuar.</p>
+        <form th:action="@{/setup/admin}" method="post">
+            <div class="field">
+                <label for="username">Usuario</label>
+                <input id="username" name="username" type="text" required placeholder="admin"/>
+            </div>
+            <div class="field">
+                <label for="password">Contraseña</label>
+                <input id="password" name="password" type="password" required placeholder="••••••••"/>
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Crear usuario</button>
+        </form>
+    </div>
+
+    <div th:if="${#lists.isEmpty(pendingMigrations) and !needsAdmin}" class="setup-done">
+        <p>Todo listo. <a th:href="@{/board}">Ir al tablero →</a></p>
+    </div>
+</div>
+
+</body>
+</html>

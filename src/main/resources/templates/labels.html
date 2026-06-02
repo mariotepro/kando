@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Kando — Etiquetas</title>
+    <link rel="stylesheet" th:href="@{/css/main.css}"/>
+</head>
+<body class="app-body">
+
+<nav class="navbar">
+    <div class="navbar-brand">
+        <a th:href="@{/board}" style="text-decoration:none;display:flex;align-items:center;gap:.5rem">
+            <span class="logo-icon">◈</span>
+            <span class="logo-text">kando</span>
+        </a>
+    </div>
+    <div class="navbar-actions">
+        <a th:href="@{/board}" class="btn btn-ghost btn-sm">← Tablero</a>
+    </div>
+</nav>
+
+<div class="page-content">
+    <div class="page-header">
+        <h1>Etiquetas</h1>
+        <button class="btn btn-primary btn-sm" onclick="showCreateForm()">+ Nueva etiqueta</button>
+    </div>
+
+    <!-- Create form -->
+    <div class="label-form card" id="createForm" style="display:none">
+        <h3>Nueva etiqueta</h3>
+        <div class="field-row">
+            <div class="field">
+                <label>Nombre</label>
+                <input type="text" id="newLabelName" maxlength="64" placeholder="Ej. urgente"/>
+            </div>
+            <div class="field">
+                <label>Color</label>
+                <input type="color" id="newLabelColor" value="#6366f1"/>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-ghost btn-sm" onclick="hideCreateForm()">Cancelar</button>
+            <button class="btn btn-primary btn-sm" onclick="createLabel()">Crear</button>
+        </div>
+    </div>
+
+    <!-- Labels list -->
+    <div class="labels-grid" id="labelsList">
+        <div th:each="lbl : ${labels}" class="label-row card" th:data-label-id="${lbl.id}">
+            <div class="label-preview" th:style="'background:' + ${lbl.color} + '22; border-left: 4px solid ' + ${lbl.color}">
+                <span class="label-dot" th:style="'background:' + ${lbl.color}"></span>
+                <span class="label-name" th:text="${lbl.name}">etiqueta</span>
+            </div>
+            <div class="label-edit-row" style="display:none">
+                <input type="text" class="edit-name" th:value="${lbl.name}" maxlength="64"/>
+                <input type="color" class="edit-color" th:value="${lbl.color}"/>
+                <button class="btn btn-primary btn-sm" th:onclick="'saveLabel(' + ${lbl.id} + ', this)'">Guardar</button>
+            </div>
+            <div class="label-actions">
+                <button class="btn btn-ghost btn-sm" th:onclick="'toggleEditLabel(' + ${lbl.id} + ', this)'">Editar</button>
+                <button class="btn btn-danger btn-sm" th:onclick="'deleteLabel(' + ${lbl.id} + ', this)'">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+    <p th:if="${#lists.isEmpty(labels)}" class="empty-state">
+        No hay etiquetas. Crea la primera para poder usarla en las tareas.
+    </p>
+</div>
+
+<script th:src="@{/js/labels.js}"></script>
+</body>
+</html>
