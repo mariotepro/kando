@@ -1,7 +1,6 @@
 package com.kando.config;
 
 import com.kando.service.SetupService;
-import com.kando.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +27,7 @@ public class SecurityConfig {
     private final SetupService setupService;
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http) {
         http
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/setup/**", "/error", "/css/**", "/js/**", "/img/**", "/favicon.ico").permitAll()
@@ -55,7 +54,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) {
         return cfg.getAuthenticationManager();
     }
 
