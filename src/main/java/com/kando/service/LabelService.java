@@ -1,7 +1,9 @@
 package com.kando.service;
 
 import com.kando.model.Label;
+import com.kando.model.Task;
 import com.kando.repository.LabelRepository;
+import com.kando.repository.TaskRepository;
 import com.kando.util.LevenshteinUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -9,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -16,6 +19,7 @@ import java.util.Optional;
 public class LabelService {
 
     private final LabelRepository labelRepository;
+    private final TaskRepository taskRepository;
 
     public List<Label> findAll() {
         return labelRepository.findAllByOrderByNameAsc();
@@ -58,6 +62,13 @@ public class LabelService {
 
     @Transactional
     public void delete(Long id) {
-        labelRepository.deleteById(id);
+        Label label = labelRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Label not found: " + id));
+
+        List<Task> tasks = taskRepository.findDistinctByLabelsId(id);
+        tasks.forEach(task -> task.getLabels().removeIf(existing -> Objects.equals(existing.getId(), id)));
+        taskRepository.saveAll(tasks);
+        taskRepository.flush();
+        labelRepository.delete(label);
     }
 }

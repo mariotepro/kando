@@ -6,8 +6,10 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
-import java.util.Set;
 
+/**
+ * Payload used to create or update a task from the board modal.
+ */
 @Getter @Setter
 public class TaskRequest {
 
@@ -17,6 +19,7 @@ public class TaskRequest {
 
     private String notes;
     private LocalDate dueDate;
-    private Set<Long> labelIds;
+    private Long labelId;
     private Long columnId;
+    private Long parentTaskId;
 }

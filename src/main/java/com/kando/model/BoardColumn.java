@@ -24,6 +24,9 @@ public class BoardColumn {
     @Column(nullable = false)
     private int position = 0;
 
+    @Column(nullable = false)
+    private boolean done = false;
+
     @JsonIgnore
     @OneToMany(mappedBy = "column", cascade = CascadeType.ALL, orphanRemoval = true,
                fetch = FetchType.LAZY)

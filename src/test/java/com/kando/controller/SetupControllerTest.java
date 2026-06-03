@@ -2,7 +2,7 @@ package com.kando.controller;
 
 import org.flywaydb.core.api.MigrationInfo;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 
 import java.util.List;
 

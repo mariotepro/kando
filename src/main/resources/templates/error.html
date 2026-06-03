@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title th:text="${((status == null or status == 999) ? 500 : status) + ' · Kando'}">Error · Kando</title>
+    <link rel="stylesheet" th:href="@{/css/main.css}"/>
+</head>
+<body class="error-body"
+      th:with="statusCode=${(status == null or status == 999) ? 500 : status},
+               errorLabel=${(error == null or #strings.isEmpty(error) or error == 'None') ? 'Error inesperado' : error}">
+
+<div class="error-shell">
+    <div class="error-orb error-orb-a"></div>
+    <div class="error-orb error-orb-b"></div>
+
+    <main class="error-panel">
+        <div class="auth-logo error-logo">
+            <span class="logo-icon">◈</span>
+            <span class="logo-text">kando</span>
+        </div>
+
+        <div class="error-grid">
+            <section class="error-hero">
+                <p class="error-eyebrow">Algo no ha salido como esperábamos</p>
+
+                <div class="error-code" th:text="${statusCode}">500</div>
+
+                <h1 th:switch="${statusCode}">
+                    <span th:case="401">Necesitas iniciar sesión para continuar</span>
+                    <span th:case="403">No tienes permisos para entrar aquí</span>
+                    <span th:case="404">No hemos encontrado esa página</span>
+                    <span th:case="*">Kando se ha encontrado con un problema</span>
+                </h1>
+
+                <p class="error-copy" th:switch="${statusCode}">
+                    <span th:case="401">
+                        Tu sesión puede haber caducado o la acción requiere autenticación.
+                    </span>
+                    <span th:case="403">
+                        La página existe, pero tu usuario no tiene acceso a este recurso.
+                    </span>
+                    <span th:case="404">
+                        La ruta que has pedido ya no existe, está mal escrita o todavía no está disponible.
+                    </span>
+                    <span th:case="*">
+                        Hemos parado la caída antes de que te dejara sin contexto. Puedes volver al inicio o reintentar desde el tablero.
+                    </span>
+                </p>
+
+                <div class="error-actions">
+                    <a sec:authorize="isAuthenticated()" th:href="@{/board}" class="btn btn-primary">
+                        Volver al tablero
+                    </a>
+                    <a sec:authorize="isAnonymous()" th:href="@{/login}" class="btn btn-primary">
+                        Ir al login
+                    </a>
+                    <a th:href="@{/}" class="btn btn-ghost">Ir al inicio</a>
+                    <button type="button" class="btn btn-ghost" onclick="history.back()">Página anterior</button>
+                </div>
+            </section>
+
+            <aside class="error-card">
+                <div class="error-chip" th:classappend="${statusCode >= 500} ? ' error-chip-danger' : ''">
+                    <span class="error-chip-dot"></span>
+                    <span th:text="${errorLabel}">Error inesperado</span>
+                </div>
+
+                <div class="error-detail" th:if="${path != null and !#strings.isEmpty(path)}">
+                    <span>Ruta</span>
+                    <code th:text="${path}">/ruta</code>
+                </div>
+
+                <div class="error-detail" th:if="${timestamp != null}">
+                    <span>Momento</span>
+                    <strong th:text="${#dates.format(timestamp, 'dd/MM/yyyy HH:mm')}">02/06/2026 18:00</strong>
+                </div>
+
+                <p class="error-note"
+                   th:if="${message != null and !#strings.isEmpty(message) and statusCode < 500}"
+                   th:text="${message}">
+                    Detalle del error
+                </p>
+
+                <p class="error-note" th:if="${statusCode >= 500}">
+                    Si estabas guardando cambios, vuelve a intentarlo en unos segundos. Si se repite, conviene revisar los logs del servidor.
+                </p>
+            </aside>
+        </div>
+    </main>
+</div>
+
+</body>
+</html>

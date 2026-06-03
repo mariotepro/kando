@@ -1,0 +1,3 @@
+ALTER TABLE kando_user ADD COLUMN display_name VARCHAR(128);
+ALTER TABLE kando_user ADD COLUMN email VARCHAR(256);
+ALTER TABLE kando_user ADD COLUMN avatar_color VARCHAR(7) NOT NULL DEFAULT '#cba6f7';

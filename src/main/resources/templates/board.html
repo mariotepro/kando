@@ -5,90 +5,202 @@
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Kando</title>
-    <link rel="stylesheet" th:href="@{/css/main.css}"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <link rel="stylesheet" th:href="@{/css/main.css(v='20260603o')}"/>
 </head>
 <body class="app-body">
 
 <!-- ── Navbar ──────────────────────────────────────────────────────────────── -->
 <nav class="navbar">
-    <div class="navbar-brand">
-        <span class="logo-icon">◈</span>
-        <span class="logo-text">kando</span>
+    <div class="navbar-main">
+        <div class="navbar-brand">
+            <span class="logo-icon">◈</span>
+            <span class="logo-text">kando</span>
+        </div>
+        <div class="board-filters">
+            <label class="board-search" for="boardSearchInput">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <path d="m20 20-3.5-3.5"></path>
+                </svg>
+                <input type="text" id="boardSearchInput" placeholder="Buscar por título" autocomplete="off"/>
+                <button class="board-filter-clear" id="boardSearchClearBtn" type="button" title="Quitar búsqueda" aria-label="Quitar búsqueda" hidden>×</button>
+            </label>
+            <div class="board-label-filter" id="boardLabelFilter">
+                <div class="board-label-filter-btn" id="boardLabelFilterBtn" tabindex="0" role="button" aria-expanded="false" aria-haspopup="listbox">
+                    <div class="board-label-filter-value" id="boardLabelFilterValue">
+                        <span id="boardLabelFilterText">Etiqueta</span>
+                    </div>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </div>
+                <div class="board-label-filter-menu" id="boardLabelFilterMenu" style="display:none">
+                    <input type="text" id="boardLabelFilterSearch" class="board-label-filter-search" placeholder="Filtrar etiquetas..." autocomplete="off"/>
+                    <div class="board-label-filter-options" id="boardLabelFilterOptions" role="listbox"></div>
+                </div>
+            </div>
+        </div>
     </div>
     <div class="navbar-actions">
+        <button class="btn btn-ghost btn-sm" id="btnEditModeDone" style="display:none" onclick="toggleEditMode()">✓ Listo</button>
         <button class="btn btn-primary btn-sm" id="btnCreateTask">+ Crear</button>
-        <a th:href="@{/labels}" class="btn btn-ghost btn-sm">Etiquetas</a>
-        <a th:href="@{/export/md}" class="btn btn-ghost btn-sm">Exportar MD</a>
-        <button class="btn btn-ghost btn-sm" id="btnEditMode">Editar columnas</button>
-        <form th:action="@{/logout}" method="post" style="display:inline">
-            <button type="submit" class="btn btn-ghost btn-sm">
-                <sec:authentication property="name"/> · Salir
+        <div class="profile-menu-wrap" id="profileMenuWrap">
+            <button class="profile-avatar-btn" id="profileAvatarBtn"
+                    th:style="'background:' + ${userProfile.avatarColor}"
+                    title="Perfil">
+                <span th:text="${userProfile.initials}">M</span>
             </button>
-        </form>
+            <div class="profile-dropdown" id="profileDropdown" style="display:none">
+                <div class="profile-dropdown-header">
+                    <strong th:text="${userProfile.effectiveName}">Mario</strong>
+                    <span class="profile-email" th:text="${userProfile.email != null ? userProfile.email : ''}"></span>
+                </div>
+                <div class="profile-dropdown-divider"></div>
+                <button class="profile-dropdown-item" type="button" onclick="openProfileModal(); closeProfileDropdown()">Editar perfil</button>
+                <button class="profile-dropdown-item" type="button" onclick="openLabelsModal(); closeProfileDropdown()">Etiquetas</button>
+                <a th:href="@{/export/md}" class="profile-dropdown-item">Exportar MD</a>
+                <button class="profile-dropdown-item" type="button" id="btnEditMode" onclick="toggleEditMode(); closeProfileDropdown()">Editar columnas</button>
+                <div class="profile-dropdown-divider"></div>
+                <form th:action="@{/logout}" method="post">
+                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+                    <button type="submit" class="profile-dropdown-item profile-dropdown-item-danger">Cerrar sesión</button>
+                </form>
+            </div>
+        </div>
     </div>
 </nav>
 
 <!-- ── Board ───────────────────────────────────────────────────────────────── -->
-<div class="board-wrapper">
-    <div class="board" id="board">
-        <div th:each="col : ${columns}"
-             class="column"
-             th:data-col-id="${col.id}">
+<main class="board-shell">
+    <div class="board-wrapper">
+        <div class="board" id="board">
+            <div th:each="col : ${columns}"
+                 class="column"
+                 th:data-col-id="${col.id}">
 
-            <div class="column-header">
-                <span class="column-title" th:text="${col.name}">Columna</span>
-                <div class="column-edit-actions" style="display:none">
-                    <button class="btn btn-icon" th:data-col-id="${col.id}"
-                            onclick="renameColumn(this)">✏️</button>
-                    <button class="btn btn-icon danger" th:data-col-id="${col.id}"
-                            onclick="deleteColumn(this)">🗑</button>
-                    <span class="drag-handle-col" title="Arrastrar columna">⠿</span>
-                </div>
-            </div>
-
-            <div class="task-list" th:data-col-id="${col.id}">
-                <div th:each="task : ${col.tasks}"
-                     class="task-card"
-                     th:data-task-id="${task.id}"
-                     th:style="${not #sets.isEmpty(task.labels)} ?
-                         'border-left: 4px solid ' + ${task.labels.iterator().next().color} : ''">
-                    <span class="task-title" th:text="${task.title}">Tarea</span>
-                    <div class="task-meta">
-                        <span th:each="lbl : ${task.labels}"
-                              class="label-chip"
-                              th:style="'background:' + ${lbl.color} + '22; color:' + ${lbl.color}"
-                              th:text="${lbl.name}">tag</span>
-                        <span th:if="${task.dueDate != null}" class="due-date"
-                              th:text="${#temporals.format(task.dueDate,'dd MMM')}">01 Ene</span>
+                <div class="column-header">
+                    <div class="column-header-main">
+                        <span class="column-title" th:text="${col.name}">Columna</span>
                     </div>
-                    <button class="task-open-btn" th:data-task-id="${task.id}"
-                            onclick="openTask(this)">···</button>
+                    <div class="column-header-tools">
+                        <button class="btn btn-icon column-sort-btn" type="button" th:data-col-id="${col.id}"
+                                data-sort-direction="none"
+                                onclick="sortColumnByLabel(this)" title="Ordenar por etiqueta">
+                            <span class="column-sort-copy">A-Z</span>
+                            <svg class="column-sort-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M12 19V5"/>
+                                <path d="m8 9 4-4 4 4"/>
+                            </svg>
+                        </button>
+                        <div class="column-edit-actions" style="display:none">
+                            <button class="btn btn-icon" th:data-col-id="${col.id}"
+                                onclick="renameColumn(this)" title="Renombrar columna">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                            </button>
+                            <button class="btn btn-icon danger" th:data-col-id="${col.id}"
+                                onclick="deleteColumn(this)" title="Eliminar columna">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 6h18"/>
+                                    <path d="M8 6V4h8v2"/>
+                                    <path d="M19 6l-1.5 14a2 2 0 0 1-2 1.5H8.5a2 2 0 0 1-2-1.5L5 6"/>
+                                    <path d="M10 11v5M14 11v5"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="task-list" th:data-col-id="${col.id}">
+                    <div th:each="task : ${col.tasks}"
+                         class="task-card"
+                         th:classappend="${task.subtask} ? ' task-card-subtask' : ''"
+                         th:data-task-id="${task.id}"
+                         th:data-parent-task-id="${task.parentTaskId}"
+                         th:data-column-id="${col.id}"
+                         th:attr="data-label-id=${task.primaryLabel != null ? task.primaryLabel.id : ''},data-completed=${task.completed}"
+                         th:style="${task.accentColor != null} ? |border-left: 4px solid ${task.accentColor};| : ''"
+                         role="button"
+                         tabindex="0">
+                        <div class="task-main">
+                            <button th:if="${task.subtask}"
+                                    class="subtask-complete-btn"
+                                    th:classappend="${task.completed} ? ' is-checked' : ''"
+                                    type="button"
+                                    title="Marcar subtarea como completada"
+                                    th:attr="data-task-id=${task.id},aria-pressed=${task.completed},aria-label=${task.completed ? 'Marcar subtarea como pendiente' : 'Marcar subtarea como completada'}">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                            </button>
+                            <span class="task-title" th:text="${task.title}">Tarea</span>
+                        </div>
+                        <div th:if="${(task.primaryLabel != null and !task.subtask) or task.dueDate != null}" class="task-meta">
+                            <span th:if="${task.primaryLabel != null and !task.subtask}"
+                                  class="label-chip"
+                                  th:style="'background:' + ${task.primaryLabel.color} + '2b; color:' + ${task.primaryLabel.color} + '; border-color:' + ${task.primaryLabel.color} + '40'"
+                                  th:text="${task.primaryLabel.name}">tag</span>
+                            <span th:if="${task.dueDate != null}" class="due-date"
+                                  th:text="${#temporals.format(task.dueDate,'dd MMM')}">01 Ene</span>
+                        </div>
+                        <button th:if="${!task.subtask}"
+                                class="task-add-subtask"
+                                type="button"
+                                title="Crear subtarea"
+                                th:attr="data-task-id=${task.id},data-column-id=${col.id},data-label-id=${task.primaryLabel != null ? task.primaryLabel.id : ''}">+</button>
+                        <button class="task-delete-btn"
+                                type="button"
+                                title="Eliminar tarea"
+                                th:attr="data-task-id=${task.id}">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 6h18"/>
+                                <path d="M8 6V4h8v2"/>
+                                <path d="M19 6l-1.5 14a2 2 0 0 1-2 1.5H8.5a2 2 0 0 1-2-1.5L5 6"/>
+                                <path d="M10 11v5M14 11v5"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="quick-add-card" th:data-col-id="${col.id}">
+                        <input type="text"
+                               class="quick-add-input"
+                               th:id="|quick-add-${col.id}|"
+                               th:data-col-id="${col.id}"
+                               placeholder="Nueva tarea"
+                               autocomplete="off"/>
+                        <span class="quick-add-feedback" aria-live="polite"></span>
+                    </div>
                 </div>
             </div>
 
-            <div class="quick-add">
-                <input type="text" class="quick-add-input" placeholder="Añadir tarea… (#etiqueta)"
-                       th:data-col-id="${col.id}"/>
-                <button class="btn btn-ghost btn-sm quick-add-btn"
-                        th:data-col-id="${col.id}" onclick="quickAdd(this)">+ Añadir</button>
+            <div class="add-column-btn" id="addColumnBtn" style="display:none">
+                <button class="btn btn-ghost" onclick="addColumn()">+ Columna</button>
             </div>
-        </div>
-
-        <!-- Add column button — only visible in edit mode -->
-        <div class="add-column-btn" id="addColumnBtn" style="display:none">
-            <button class="btn btn-ghost" onclick="addColumn()">+ Columna</button>
         </div>
     </div>
-</div>
+</main>
 
 <!-- ── Task modal ──────────────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="taskModal" style="display:none" onclick="closeModalOutside(event)">
-    <div class="modal">
+    <div class="modal modal-task">
         <div class="modal-header">
-            <h2 id="modalTitle">Tarea</h2>
-            <button class="btn btn-icon" onclick="closeModal()">✕</button>
+            <div>
+                <p class="modal-eyebrow">Detalle de tarea</p>
+                <h2 id="modalTitle">Tarea</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="closeModal()">✕</button>
         </div>
-        <div class="modal-body">
+        <div class="modal-tab-strip" id="modalTabStrip" style="display:none">
+            <button class="modal-tab active" id="tabBtnDetails" type="button" onclick="switchModalTab('details')">Detalles</button>
+            <button class="modal-tab" id="tabBtnHistory" type="button" onclick="switchModalTab('history')">Historial</button>
+        </div>
+        <div class="modal-body" id="modalBodyDetails">
             <div class="field">
                 <label>Título</label>
                 <input type="text" id="modalTaskTitle" maxlength="512"/>
@@ -101,16 +213,129 @@
                 <label>Fecha límite</label>
                 <input type="date" id="modalTaskDue"/>
             </div>
+            <div class="field cpicker-field">
+                <label>Tarea padre</label>
+                <div class="cpicker" id="parentCpicker">
+                    <div class="cpicker-trigger" id="parentCpickerTrigger" tabindex="0" aria-expanded="false" aria-haspopup="listbox">
+                        <div class="cpicker-chips" id="parentChips">
+                            <span class="cpicker-placeholder" id="parentPlaceholder">Sin tarea padre</span>
+                        </div>
+                        <svg class="cpicker-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </div>
+                    <div class="cpicker-dropdown" id="parentCpickerDropdown" style="display:none">
+                        <input type="text" class="cpicker-search" id="modalParentSearch" placeholder="Buscar tarea…" autocomplete="off"/>
+                        <div class="cpicker-results" id="modalParentResults"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="field cpicker-field" data-picker="label">
+                <label>Etiqueta</label>
+                <div class="cpicker" id="labelCpicker">
+                    <div class="cpicker-trigger" id="labelCpickerTrigger" tabindex="0" aria-expanded="false" aria-haspopup="listbox">
+                        <div class="cpicker-chips" id="labelChips">
+                            <span class="cpicker-placeholder" id="labelPlaceholder">Sin etiqueta</span>
+                        </div>
+                        <svg class="cpicker-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </div>
+                    <div class="cpicker-dropdown" id="labelCpickerDropdown" style="display:none">
+                        <input type="text" class="cpicker-search" id="modalLabelSearch" placeholder="Buscar etiqueta…" autocomplete="off"/>
+                        <div class="cpicker-results" id="modalLabelResults"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="field modal-subtasks-field" id="modalSubtasksField" style="display:none">
+                <label>Subtareas</label>
+                <div class="modal-subtasks-list" id="modalSubtasksList"></div>
+            </div>
+        </div>
+        <div class="modal-body modal-body-history" id="modalBodyHistory" style="display:none">
+            <div class="task-history-list" id="taskHistoryList"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger-plain btn-sm" id="modalDeleteButton" type="button" onclick="deleteCurrentTask()">Eliminar</button>
+            <div style="flex:1"></div>
+            <button class="btn btn-ghost btn-sm" type="button" onclick="closeModal()">Cancelar</button>
+            <button class="btn btn-primary btn-sm" type="button" onclick="saveTask()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Labels modal ─────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="labelsModal" style="display:none" onclick="closeLabelsModalOutside(event)">
+    <div class="modal modal-labels">
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow">Gestión</p>
+                <h2>Etiquetas</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="closeLabelsModal()">✕</button>
+        </div>
+        <div class="modal-body modal-body-labels">
+            <div class="labels-grid" id="labelsModalGrid"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Profile modal ────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="profileModal" style="display:none" onclick="closeProfileModalOutside(event)">
+    <div class="modal modal-profile">
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow">Cuenta</p>
+                <h2>Editar perfil</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="closeProfileModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="field profile-avatar-field">
+                <label>Avatar</label>
+                <div class="profile-avatar-editor">
+                    <button class="profile-avatar-preview" id="profileAvatarPreview" type="button" title="Cambiar color">
+                        <span id="profileAvatarInitials">M</span>
+                    </button>
+                    <span class="profile-avatar-hint">Haz clic para cambiar el color</span>
+                </div>
+            </div>
             <div class="field">
-                <label>Etiquetas</label>
-                <div id="modalLabels" class="label-picker"></div>
+                <label>Nombre visible</label>
+                <input type="text" id="profileDisplayName" maxlength="128" placeholder="Tu nombre…"/>
+            </div>
+            <div class="field">
+                <label>Login (nombre de usuario)</label>
+                <input type="text" id="profileUsername" maxlength="64" autocomplete="username"/>
+                <p class="field-help" id="profileUsernameHelp"></p>
+            </div>
+            <div class="field">
+                <label>Email</label>
+                <input type="email" id="profileEmail" maxlength="256" placeholder="opcional"/>
+            </div>
+            <div class="profile-password-section">
+                <p class="profile-section-label">Cambiar contraseña</p>
+                <div class="field">
+                    <label>Contraseña actual</label>
+                    <input type="password" id="profileCurrentPwd" autocomplete="current-password"/>
+                </div>
+                <div class="field">
+                    <label>Nueva contraseña</label>
+                    <input type="password" id="profileNewPwd" autocomplete="new-password"/>
+                    <div class="pwd-strength" id="pwdStrength" style="display:none">
+                        <span class="pwd-req" id="pwdLen">8+ caracteres</span>
+                        <span class="pwd-req" id="pwdUpper">Mayúscula</span>
+                        <span class="pwd-req" id="pwdLower">Minúscula</span>
+                        <span class="pwd-req" id="pwdDigit">Número</span>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Confirmar nueva contraseña</label>
+                    <input type="password" id="profileConfirmPwd" autocomplete="new-password"/>
+                </div>
             </div>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-danger btn-sm" onclick="deleteCurrentTask()">Eliminar</button>
+            <p class="profile-save-msg" id="profileSaveMsg"></p>
             <div style="flex:1"></div>
-            <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
-            <button class="btn btn-primary btn-sm" onclick="saveTask()">Guardar</button>
+            <button class="btn btn-ghost btn-sm" type="button" onclick="closeProfileModal()">Cancelar</button>
+            <button class="btn btn-primary btn-sm" type="button" onclick="saveProfile()">Guardar</button>
         </div>
     </div>
 </div>
@@ -119,10 +344,17 @@
 <script th:inline="javascript">
     window.KANDO = {
         labels: /*[[${labels}]]*/ [],
-        csrfToken: /*[[${_csrf != null ? _csrf.token : ''}]]*/ ''
+        csrfToken: /*[[${_csrf != null ? _csrf.token : ''}]]*/ '',
+        user: {
+            username:    /*[[${userProfile.username}]]*/ '',
+            displayName: /*[[${userProfile.displayName}]]*/ null,
+            email:       /*[[${userProfile.email}]]*/ null,
+            avatarColor: /*[[${userProfile.avatarColor}]]*/ '#cba6f7',
+            initials:    /*[[${userProfile.initials}]]*/ '?'
+        }
     };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script th:src="@{/js/board.js}"></script>
+<script th:src="@{/js/board.js(v='20260603l')}"></script>
 </body>
 </html>

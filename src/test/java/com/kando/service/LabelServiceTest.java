@@ -2,6 +2,7 @@ package com.kando.service;
 
 import com.kando.model.Label;
 import com.kando.repository.LabelRepository;
+import com.kando.repository.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +22,8 @@ class LabelServiceTest {
 
     @Mock
     LabelRepository labelRepository;
+    @Mock
+    TaskRepository taskRepository;
 
     @InjectMocks
     LabelService labelService;
@@ -121,10 +124,13 @@ class LabelServiceTest {
 
     @Test
     void delete_delegatesToRepository() {
-        doNothing().when(labelRepository).deleteById(1L);
+        when(labelRepository.findById(1L)).thenReturn(Optional.of(urgente));
+        when(taskRepository.findDistinctByLabelsId(1L)).thenReturn(List.of());
 
         labelService.delete(1L);
 
-        verify(labelRepository).deleteById(1L);
+        verify(taskRepository).saveAll(List.of());
+        verify(taskRepository).flush();
+        verify(labelRepository).delete(urgente);
     }
 }

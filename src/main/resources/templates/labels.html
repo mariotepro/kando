@@ -4,7 +4,10 @@
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Kando — Etiquetas</title>
-    <link rel="stylesheet" th:href="@{/css/main.css}"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <link rel="stylesheet" th:href="@{/css/main.css(v='20260603f')}"/>
 </head>
 <body class="app-body">
 
@@ -23,49 +26,48 @@
 <div class="page-content">
     <div class="page-header">
         <h1>Etiquetas</h1>
-        <button class="btn btn-primary btn-sm" onclick="showCreateForm()">+ Nueva etiqueta</button>
     </div>
 
-    <!-- Create form -->
-    <div class="label-form card" id="createForm" style="display:none">
-        <h3>Nueva etiqueta</h3>
-        <div class="field-row">
-            <div class="field">
-                <label>Nombre</label>
-                <input type="text" id="newLabelName" maxlength="64" placeholder="Ej. urgente"/>
-            </div>
-            <div class="field">
-                <label>Color</label>
-                <input type="color" id="newLabelColor" value="#6366f1"/>
-            </div>
-        </div>
-        <div class="form-actions">
-            <button class="btn btn-ghost btn-sm" onclick="hideCreateForm()">Cancelar</button>
-            <button class="btn btn-primary btn-sm" onclick="createLabel()">Crear</button>
-        </div>
-    </div>
-
-    <!-- Labels list -->
     <div class="labels-grid" id="labelsList">
         <div th:each="lbl : ${labels}" class="label-row card" th:data-label-id="${lbl.id}">
-            <div class="label-preview" th:style="'background:' + ${lbl.color} + '22; border-left: 4px solid ' + ${lbl.color}">
-                <span class="label-dot" th:style="'background:' + ${lbl.color}"></span>
-                <span class="label-name" th:text="${lbl.name}">etiqueta</span>
-            </div>
-            <div class="label-edit-row" style="display:none">
-                <input type="text" class="edit-name" th:value="${lbl.name}" maxlength="64"/>
-                <input type="color" class="edit-color" th:value="${lbl.color}"/>
-                <button class="btn btn-primary btn-sm" th:onclick="'saveLabel(' + ${lbl.id} + ', this)'">Guardar</button>
-            </div>
-            <div class="label-actions">
-                <button class="btn btn-ghost btn-sm" th:onclick="'toggleEditLabel(' + ${lbl.id} + ', this)'">Editar</button>
-                <button class="btn btn-danger btn-sm" th:onclick="'deleteLabel(' + ${lbl.id} + ', this)'">Eliminar</button>
-            </div>
+            <button class="label-color-btn"
+                    type="button"
+                    th:style="'background:' + ${lbl.color}"
+                    th:data-color="${lbl.color}"
+                    title="Cambiar color"></button>
+            <input class="label-name-input"
+                   th:value="${lbl.name}"
+                   maxlength="64"
+                   placeholder="Nombre de etiqueta"/>
+            <button class="label-delete-btn" type="button" title="Eliminar etiqueta"
+                    th:data-label-id="${lbl.id}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"/>
+                    <path d="M8 6V4h8v2"/>
+                    <path d="M19 6l-1.5 14a2 2 0 0 1-2 1.5H8.5a2 2 0 0 1-2-1.5L5 6"/>
+                    <path d="M10 11v5M14 11v5"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- New label row — always visible at the bottom -->
+        <div class="label-row label-row-new card">
+            <button class="label-color-btn"
+                    type="button"
+                    id="newLabelColorBtn"
+                    style="background:#cba6f7"
+                    data-color="#cba6f7"
+                    title="Elegir color"></button>
+            <input class="label-name-input"
+                   id="newLabelName"
+                   maxlength="64"
+                   placeholder="Nueva etiqueta…"/>
         </div>
     </div>
 
     <p th:if="${#lists.isEmpty(labels)}" class="empty-state">
-        No hay etiquetas. Crea la primera para poder usarla en las tareas.
+        Escribe el nombre de la primera etiqueta y pulsa Enter para crearla.
     </p>
 </div>
 

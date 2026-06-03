@@ -14,13 +14,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 class BoardIntegrationTest {
 
-    @MockBean
+    @MockitoBean
     SetupService setupService;
 
     @Autowired BoardService          boardService;
@@ -87,7 +86,7 @@ class BoardIntegrationTest {
 
     @Test
     void deleteColumn_removesItAndCascadesToTasks() {
-        boardService.createQuick("Tarea temporal", colHoy.getId());
+        createTaggedTask("Tarea temporal");
         boardService.deleteColumn(colHoy.getId());
 
         assertThat(columnRepository.findById(colHoy.getId())).isEmpty();
@@ -110,7 +109,7 @@ class BoardIntegrationTest {
 
     @Test
     void createQuickTask_persistsInDatabase() {
-        Task task = boardService.createQuick("Mi primera tarea", colHoy.getId());
+        Task task = boardService.createQuick("Mi primera tarea", colHoy.getId(), labelUrgente.getId());
 
         assertThat(task.getId()).isNotNull();
         assertThat(task.getTitle()).isEqualTo("Mi primera tarea");
@@ -128,9 +127,9 @@ class BoardIntegrationTest {
 
     @Test
     void createMultipleTasks_positionsAreSequential() {
-        boardService.createQuick("Tarea 1", colHoy.getId());
-        boardService.createQuick("Tarea 2", colHoy.getId());
-        boardService.createQuick("Tarea 3", colHoy.getId());
+        createTaggedTask("Tarea 1");
+        createTaggedTask("Tarea 2");
+        createTaggedTask("Tarea 3");
 
         List<Task> tasks = taskRepository.findByColumnIdOrderByPositionAsc(colHoy.getId());
         assertThat(tasks).hasSize(3);
@@ -141,10 +140,11 @@ class BoardIntegrationTest {
 
     @Test
     void updateTask_persistsAllFields() {
-        Task task = boardService.createQuick("Original", colHoy.getId());
+        Task task = createTaggedTask("Original");
 
         boardService.updateTask(task.getId(), "Actualizada",
-            "Mis notas aquí", LocalDate.of(2026, 12, 31), Set.of(labelUrgente.getId()));
+            "Mis notas aquí", LocalDate.of(2026, 12, 31), labelUrgente.getId(),
+            colHoy.getId(), null);
 
         Task reloaded = taskRepository.findById(task.getId()).orElseThrow();
         assertThat(reloaded.getTitle()).isEqualTo("Actualizada");
@@ -156,9 +156,9 @@ class BoardIntegrationTest {
     @Test
     void moveTask_changesColumnAndReindexes() {
         BoardColumn destino = boardService.createColumn("Hecho");
-        Task task = boardService.createQuick("Mover esta", colHoy.getId());
+        Task task = createTaggedTask("Mover esta");
 
-        boardService.moveTask(task.getId(), destino.getId(), 0);
+        boardService.moveTask(task.getId(), destino.getId(), 0, null);
 
         Task reloaded = taskRepository.findById(task.getId()).orElseThrow();
         assertThat(reloaded.getColumn().getId()).isEqualTo(destino.getId());
@@ -166,8 +166,20 @@ class BoardIntegrationTest {
     }
 
     @Test
+    void moveTask_onTopOfAnotherTask_createsSubtask() {
+        Task parent = createTaggedTask("Tarea padre");
+        Task child = createTaggedTask("Tarea hija");
+
+        boardService.moveTask(child.getId(), colHoy.getId(), 0, parent.getId());
+
+        Task reloaded = taskRepository.findById(child.getId()).orElseThrow();
+        assertThat(reloaded.getParentTask()).isNotNull();
+        assertThat(reloaded.getParentTask().getId()).isEqualTo(parent.getId());
+    }
+
+    @Test
     void deleteTask_removesFromDatabase() {
-        Task task = boardService.createQuick("Para eliminar", colHoy.getId());
+        Task task = createTaggedTask("Para eliminar");
 
         boardService.deleteTask(task.getId());
 
@@ -217,7 +229,7 @@ class BoardIntegrationTest {
 
     @Test
     void exportMarkdown_includesColumnNamesAndTaskTitles() {
-        boardService.createQuick("Tarea exportada", colHoy.getId());
+        createTaggedTask("Tarea exportada");
 
         String md = exportService.exportAsMarkdown();
 
@@ -230,5 +242,21 @@ class BoardIntegrationTest {
         String md = exportService.exportAsMarkdown();
 
         assertThat(md).contains("_Sin tareas_");
+    }
+
+    @Test
+    void exportMarkdown_indentsSubtasks() {
+        Task parent = createTaggedTask("Padre");
+        Task child = createTaggedTask("Hija");
+        boardService.moveTask(child.getId(), colHoy.getId(), 0, parent.getId());
+
+        String md = exportService.exportAsMarkdown();
+
+        assertThat(md).contains("- [ ] **Padre**");
+        assertThat(md).contains("  - [ ] **Hija**");
+    }
+
+    private Task createTaggedTask(String title) {
+        return boardService.createQuick(title, colHoy.getId(), labelUrgente.getId());
     }
 }

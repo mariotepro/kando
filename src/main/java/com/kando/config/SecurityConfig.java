@@ -31,7 +31,7 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/setup/**", "/css/**", "/js/**", "/img/**", "/favicon.ico").permitAll()
+                .requestMatchers("/setup/**", "/error", "/css/**", "/js/**", "/img/**", "/favicon.ico").permitAll()
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form
@@ -65,7 +65,7 @@ public class SecurityConfig {
             public void onAuthenticationSuccess(HttpServletRequest request,
                                                 HttpServletResponse response,
                                                 Authentication authentication) throws IOException {
-                if (setupService.hasPendingMigrations()) {
+                if (setupService.requiresSetup()) {
                     response.sendRedirect("/setup");
                 } else {
                     response.sendRedirect("/board");

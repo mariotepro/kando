@@ -14,69 +14,68 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class BoardServiceTest {
 
     @Mock BoardColumnRepository columnRepository;
-    @Mock TaskRepository       taskRepository;
-    @Mock LabelRepository      labelRepository;
-    @Mock LabelService         labelService;
+    @Mock TaskRepository taskRepository;
+    @Mock LabelRepository labelRepository;
+    @Mock LabelService labelService;
+    @Mock com.kando.repository.TaskColumnHistoryRepository historyRepository;
+    @Mock ColumnHistoryService columnHistoryService;
 
     @InjectMocks
     BoardService boardService;
 
-    private BoardColumn col;
-    private Label urgente;
+    private BoardColumn todayColumn;
+    private BoardColumn doneColumn;
+    private Label urgentLabel;
 
     @BeforeEach
     void setUp() {
-        col = new BoardColumn();
-        col.setId(1L);
-        col.setName("Hoy");
-        col.setPosition(0);
+        todayColumn = column(1L, "Hoy", 0);
+        doneColumn = column(2L, "Hecho", 1);
 
-        urgente = new Label();
-        urgente.setId(10L);
-        urgente.setName("urgente");
-        urgente.setColor("#ef4444");
+        urgentLabel = new Label();
+        urgentLabel.setId(10L);
+        urgentLabel.setName("urgente");
+        urgentLabel.setColor("#ef4444");
     }
-
-    // ── Columns ──────────────────────────────────────────────────────────────
 
     @Test
     void findAllColumns_returnsOrderedList() {
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(col));
+        when(columnRepository.findBoardViewColumns()).thenReturn(List.of(todayColumn));
 
         List<BoardColumn> result = boardService.findAllColumns();
 
-        assertThat(result).containsExactly(col);
+        assertThat(result).containsExactly(todayColumn);
     }
 
     @Test
     void createColumn_appendsAtEnd() {
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(col));
-        when(columnRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(todayColumn));
+        when(columnRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         BoardColumn created = boardService.createColumn("Nuevo");
 
         assertThat(created.getName()).isEqualTo("Nuevo");
-        assertThat(created.getPosition()).isEqualTo(1); // after position 0
+        assertThat(created.getPosition()).isEqualTo(1);
     }
 
     @Test
     void createColumn_emptyBoard_startsAtZero() {
         when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of());
-        when(columnRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(columnRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         BoardColumn created = boardService.createColumn("Primera");
 
@@ -85,8 +84,8 @@ class BoardServiceTest {
 
     @Test
     void renameColumn_updatesName() {
-        when(columnRepository.findById(1L)).thenReturn(Optional.of(col));
-        when(columnRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
+        when(columnRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         BoardColumn renamed = boardService.renameColumn(1L, "Mañana");
 
@@ -97,167 +96,441 @@ class BoardServiceTest {
     void renameColumn_unknownId_throws() {
         when(columnRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class,
-            () -> boardService.renameColumn(99L, "x"));
+        assertThrows(IllegalArgumentException.class, () -> boardService.renameColumn(99L, "x"));
     }
 
     @Test
     void deleteColumn_delegatesToRepository() {
-        doNothing().when(columnRepository).deleteById(1L);
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of());
 
         boardService.deleteColumn(1L);
 
-        verify(columnRepository).deleteById(1L);
+        verify(taskRepository).deleteAll(List.of());
+        verify(taskRepository).flush();
+        verify(columnRepository).delete(todayColumn);
     }
 
     @Test
     void reorderColumns_updatesPositions() {
-        BoardColumn c2 = new BoardColumn();
-        c2.setId(2L);
-        c2.setName("Planificado");
-        c2.setPosition(1);
-
-        when(columnRepository.findAllById(anyList())).thenReturn(List.of(col, c2));
-        when(columnRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+        when(columnRepository.findAllById(anyList())).thenReturn(List.of(todayColumn, doneColumn));
+        when(columnRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         boardService.reorderColumns(List.of(2L, 1L));
 
-        // c2 should now be position 0, col should be position 1
-        assertThat(c2.getPosition()).isZero();
-        assertThat(col.getPosition()).isEqualTo(1);
+        assertThat(doneColumn.getPosition()).isZero();
+        assertThat(todayColumn.getPosition()).isEqualTo(1);
     }
 
-    // ── Tasks ─────────────────────────────────────────────────────────────────
+    @Test
+    void createQuick_withoutLabel_throws() {
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
+
+        assertThrows(IllegalArgumentException.class, () -> boardService.createQuick("Mi tarea", 1L));
+    }
 
     @Test
-    void createQuick_plainTitle_noLabels() {
-        when(columnRepository.findById(1L)).thenReturn(Optional.of(col));
+    void createQuick_withExplicitLabel_attachesSelectedLabel() {
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
         when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of());
-        when(taskRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(labelRepository.findById(10L)).thenReturn(Optional.of(urgentLabel));
 
-        Task task = boardService.createQuick("Mi tarea", 1L);
+        Task task = boardService.createQuick("Mi tarea", 1L, 10L);
 
         assertThat(task.getTitle()).isEqualTo("Mi tarea");
-        assertThat(task.getLabels()).isEmpty();
+        assertThat(task.getLabels()).contains(urgentLabel);
         assertThat(task.getPosition()).isZero();
     }
 
     @Test
     void createQuick_withHashtag_attachesMatchingLabel() {
-        when(columnRepository.findById(1L)).thenReturn(Optional.of(col));
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
         when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of());
-        when(taskRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(labelService.findByName("urgente")).thenReturn(Optional.of(urgente));
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(labelService.findByName("urgente")).thenReturn(Optional.of(urgentLabel));
 
         Task task = boardService.createQuick("Arreglar bug #urgente", 1L);
 
         assertThat(task.getTitle()).isEqualTo("Arreglar bug");
-        assertThat(task.getLabels()).contains(urgente);
+        assertThat(task.getLabels()).contains(urgentLabel);
     }
 
     @Test
     void createQuick_hashtagWithTypo_usesFuzzyMatch() {
-        when(columnRepository.findById(1L)).thenReturn(Optional.of(col));
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
         when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of());
-        when(taskRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        // exact miss → falls back to closest
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(labelService.findByName("urgentee")).thenReturn(Optional.empty());
-        when(labelService.findClosest("urgentee")).thenReturn(Optional.of(urgente));
+        when(labelService.findClosest("urgentee")).thenReturn(Optional.of(urgentLabel));
 
         Task task = boardService.createQuick("Fix #urgentee", 1L);
 
-        assertThat(task.getLabels()).contains(urgente);
-    }
-
-    @Test
-    void createQuick_positionEqualsExistingCount() {
-        Task existing = new Task();
-        existing.setId(5L);
-        when(columnRepository.findById(1L)).thenReturn(Optional.of(col));
-        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(existing));
-        when(taskRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        Task task = boardService.createQuick("Nueva", 1L);
-
-        assertThat(task.getPosition()).isEqualTo(1);
+        assertThat(task.getLabels()).contains(urgentLabel);
     }
 
     @Test
     void updateTask_updatesAllFields() {
-        Task task = new Task();
-        task.setId(5L);
-        task.setTitle("Viejo");
+        Task task = task(5L, "Viejo", todayColumn, 0);
         when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
-        when(labelRepository.findById(10L)).thenReturn(Optional.of(urgente));
-        when(taskRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(labelRepository.findById(10L)).thenReturn(Optional.of(urgentLabel));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(task));
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Task updated = boardService.updateTask(5L, "Nuevo título",
-            "Mis notas", LocalDate.of(2026, 12, 31), Set.of(10L));
+        Task updated = boardService.updateTask(5L, "Nuevo título", "Mis notas",
+            LocalDate.of(2026, 12, 31), 10L, 1L, null);
 
         assertThat(updated.getTitle()).isEqualTo("Nuevo título");
         assertThat(updated.getNotes()).isEqualTo("Mis notas");
         assertThat(updated.getDueDate()).isEqualTo(LocalDate.of(2026, 12, 31));
-        assertThat(updated.getLabels()).contains(urgente);
+        assertThat(updated.getLabels()).contains(urgentLabel);
     }
 
     @Test
-    void updateTask_nullLabelIds_clearsLabels() {
-        Task task = new Task();
-        task.setId(5L);
-        task.setTitle("T");
-        task.getLabels().add(urgente);
-        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
-        when(taskRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+    void updateTask_assignsParentTaskAndParentColumn() {
+        Task task = task(5L, "Nueva", todayColumn, 0);
+        Task parentTask = task(7L, "Padre", doneColumn, 0);
 
-        Task updated = boardService.updateTask(5L, "T", null, null, null);
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+        when(taskRepository.findById(7L)).thenReturn(Optional.of(parentTask));
+        when(columnRepository.findById(2L)).thenReturn(Optional.of(doneColumn));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(task));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(2L)).thenReturn(List.of(parentTask));
+        when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Task updated = boardService.updateTask(5L, "Nueva", null, null, null, 1L, 7L);
+
+        assertThat(updated.getParentTask()).isEqualTo(parentTask);
+        assertThat(updated.getColumn()).isEqualTo(doneColumn);
+        assertThat(updated.getPosition()).isEqualTo(1);
+    }
+
+    @Test
+    void updateTask_nullLabelId_clearsLabels() {
+        Task task = task(5L, "T", todayColumn, 0);
+        task.getLabels().add(urgentLabel);
+
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(task));
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Task updated = boardService.updateTask(5L, "T", null, null, null, 1L, null);
 
         assertThat(updated.getLabels()).isEmpty();
     }
 
     @Test
-    void moveTask_changesColumnAndPosition() {
-        BoardColumn target = new BoardColumn();
-        target.setId(2L);
-        Task task = new Task();
-        task.setId(5L);
-        task.setColumn(col);
+    void updateTask_unknownLabel_throws() {
+        Task task = task(5L, "T", todayColumn, 0);
 
         when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
-        when(columnRepository.findById(2L)).thenReturn(Optional.of(target));
-        when(taskRepository.save(any())).thenReturn(task);
-        when(taskRepository.findByColumnIdOrderByPositionAsc(2L)).thenReturn(new ArrayList<>());
-        when(taskRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+        when(labelRepository.findById(88L)).thenReturn(Optional.empty());
 
-        boardService.moveTask(5L, 2L, 0);
+        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L,
+            "T", null, null, 88L, 1L, null));
+    }
 
-        assertThat(task.getColumn()).isEqualTo(target);
+    @Test
+    void updateTask_selfParent_throws() {
+        Task task = task(5L, "T", todayColumn, 0);
+
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+
+        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L,
+            "T", null, null, null, 1L, 5L));
+    }
+
+    @Test
+    void updateTask_parentWithDifferentLabel_throws() {
+        Label otherLabel = new Label();
+        otherLabel.setId(20L);
+        otherLabel.setName("otro");
+        otherLabel.setColor("#3b82f6");
+
+        Task task = task(5L, "Hijo", todayColumn, 0);
+        Task parentTask = task(7L, "Padre", todayColumn, 1);
+        parentTask.getLabels().add(otherLabel);
+
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+        when(taskRepository.findById(7L)).thenReturn(Optional.of(parentTask));
+        when(labelRepository.findById(10L)).thenReturn(Optional.of(urgentLabel));
+
+        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L,
+            "Hijo", null, null, 10L, 1L, 7L));
+    }
+
+    @Test
+    void updateTask_parentWithSameLabel_succeeds() {
+        Task task = task(5L, "Hijo", todayColumn, 0);
+        Task parentTask = task(7L, "Padre", todayColumn, 0);
+        parentTask.getLabels().add(urgentLabel);
+
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+        when(taskRepository.findById(7L)).thenReturn(Optional.of(parentTask));
+        when(labelRepository.findById(10L)).thenReturn(Optional.of(urgentLabel));
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(parentTask, task));
+        when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Task updated = boardService.updateTask(5L, "Hijo", null, null, 10L, 1L, 7L);
+
+        assertThat(updated.getParentTask()).isEqualTo(parentTask);
+    }
+
+    @Test
+    void updateTask_rootTaskPropagatesLabelToDirectChildren() {
+        // Data
+        Label followUpLabel = new Label();
+        followUpLabel.setId(21L);
+        followUpLabel.setName("seguimiento");
+        followUpLabel.setColor("#22c55e");
+
+        Task parentTask = task(5L, "Padre", todayColumn, 0);
+        parentTask.getLabels().add(urgentLabel);
+        Task childTask = task(6L, "Hija", todayColumn, 1);
+        childTask.setParentTask(parentTask);
+        childTask.getLabels().add(urgentLabel);
+
+        // Mocks
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(parentTask));
+        when(labelRepository.findById(21L)).thenReturn(Optional.of(followUpLabel));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(parentTask, childTask));
+
+        // Mock methods
+        when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Invoke method
+        Task updated = boardService.updateTask(5L, "Padre", null, null, 21L, 1L, null);
+
+        // Asserts
+        assertThat(updated.getLabels()).containsExactly(followUpLabel);
+        assertThat(childTask.getLabels()).containsExactly(followUpLabel);
+    }
+
+    @Test
+    void moveTask_changesColumnAndPosition() {
+        Task task = task(5L, "Mover", todayColumn, 0);
+
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+        when(columnRepository.findById(2L)).thenReturn(Optional.of(doneColumn));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(task));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(2L)).thenReturn(List.of());
+        when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        boardService.moveTask(5L, 2L, 0, null);
+
+        assertThat(task.getColumn()).isEqualTo(doneColumn);
         assertThat(task.getPosition()).isZero();
+        assertThat(task.getParentTask()).isNull();
+    }
+
+    @Test
+    void updateTaskCompletion_marksTaskAsCompleted() {
+        // Data
+        Task task = task(5L, "Checklist", todayColumn, 0);
+
+        // Mocks
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+
+        // Mock methods
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Invoke method
+        Task updated = boardService.updateTaskCompletion(5L, true);
+
+        // Asserts
+        assertThat(updated.isCompleted()).isTrue();
+    }
+
+    @Test
+    void updateTaskCompletion_unknownTask_throws() {
+        // Mocks
+        when(taskRepository.findById(99L)).thenReturn(Optional.empty());
+
+        // Invoke method
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+            () -> boardService.updateTaskCompletion(99L, true));
+
+        // Asserts
+        assertThat(thrown).hasMessage("Task not found: 99");
+    }
+
+    @Test
+    void moveTask_onAnotherTaskMakesSubtask() {
+        Task parentTask = task(7L, "Padre", todayColumn, 0);
+        Task task = task(5L, "Hija", todayColumn, 1);
+
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+        when(taskRepository.findById(7L)).thenReturn(Optional.of(parentTask));
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(parentTask, task));
+        when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        boardService.moveTask(5L, 1L, 0, 7L);
+
+        assertThat(task.getParentTask()).isEqualTo(parentTask);
+        assertThat(task.getPosition()).isEqualTo(1);
+        assertThat(task.isSubtask()).isTrue();
+    }
+
+    @Test
+    void moveTask_nestedParent_throws() {
+        Task nestedParent = task(7L, "Padre", todayColumn, 0);
+        Task ancestor = task(8L, "Ancestro", todayColumn, 1);
+        nestedParent.setParentTask(ancestor);
+        Task task = task(5L, "Hija", todayColumn, 2);
+
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+        when(taskRepository.findById(7L)).thenReturn(Optional.of(nestedParent));
+
+        assertThrows(IllegalArgumentException.class, () -> boardService.moveTask(5L, 1L, 0, 7L));
+    }
+
+    @Test
+    void moveTask_missingTargetColumn_throws() {
+        Task task = task(5L, "Mover", todayColumn, 0);
+
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+        when(columnRepository.findById(3L)).thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class, () -> boardService.moveTask(5L, 3L, 0, null));
+    }
+
+    @Test
+    void deleteTask_promotesDirectSubtasksToRoot() {
+        Task parentTask = task(5L, "Padre", todayColumn, 0);
+        Task childTask = task(6L, "Hija", todayColumn, 1);
+        childTask.setParentTask(parentTask);
+
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(parentTask));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(parentTask, childTask));
+        when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        boardService.deleteTask(5L);
+
+        assertThat(childTask.getParentTask()).isNull();
+        assertThat(childTask.getPosition()).isZero();
+        verify(taskRepository).delete(parentTask);
     }
 
     @Test
     void deleteTask_delegatesToRepository() {
-        doNothing().when(taskRepository).deleteById(5L);
+        Task task = task(5L, "Para borrar", todayColumn, 0);
+
+        when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(task));
+        when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         boardService.deleteTask(5L);
 
-        verify(taskRepository).deleteById(5L);
+        verify(taskRepository).delete(task);
+    }
+
+    @Test
+    void sortColumnByLabel_keepsSubtasksAttachedToTheirParentBlock() {
+        Label alphaLabel = new Label();
+        alphaLabel.setId(20L);
+        alphaLabel.setName("alpha");
+        alphaLabel.setColor("#22c55e");
+
+        Task urgentParent = task(5L, "Urgente", todayColumn, 0);
+        urgentParent.getLabels().add(urgentLabel);
+        Task urgentChild = task(6L, "Hija", todayColumn, 1);
+        urgentChild.setParentTask(urgentParent);
+        Task alphaParent = task(7L, "Alpha", todayColumn, 2);
+        alphaParent.getLabels().add(alphaLabel);
+
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(urgentParent, urgentChild, alphaParent));
+        when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        boardService.sortColumnByLabel(1L);
+
+        assertThat(alphaParent.getPosition()).isZero();
+        assertThat(urgentParent.getPosition()).isEqualTo(1);
+        assertThat(urgentChild.getPosition()).isEqualTo(2);
+    }
+
+    @Test
+    void sortColumnByLabel_descending_keepsSubtasksAttachedToTheirParentBlock() {
+        // Data
+        Label alphaLabel = new Label();
+        alphaLabel.setId(20L);
+        alphaLabel.setName("alpha");
+        alphaLabel.setColor("#22c55e");
+
+        Task urgentParent = task(5L, "Urgente", todayColumn, 0);
+        urgentParent.getLabels().add(urgentLabel);
+        Task urgentChild = task(6L, "Hija", todayColumn, 1);
+        urgentChild.setParentTask(urgentParent);
+        Task alphaParent = task(7L, "Alpha", todayColumn, 2);
+        alphaParent.getLabels().add(alphaLabel);
+
+        // Mocks
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
+        when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(urgentParent, urgentChild, alphaParent));
+
+        // Mock methods
+        when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Invoke method
+        boardService.sortColumnByLabel(1L, true);
+
+        // Asserts
+        assertThat(urgentParent.getPosition()).isZero();
+        assertThat(urgentChild.getPosition()).isEqualTo(1);
+        assertThat(alphaParent.getPosition()).isEqualTo(2);
+    }
+
+    @Test
+    void sortColumnByLabel_unknownColumn_throws() {
+        // Mocks
+        when(columnRepository.findById(99L)).thenReturn(Optional.empty());
+
+        // Invoke method
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+            () -> boardService.sortColumnByLabel(99L, true));
+
+        // Asserts
+        assertThat(thrown).hasMessage("Column not found: 99");
     }
 
     @Test
     void findTask_unknownId_throws() {
-        when(taskRepository.findById(99L)).thenReturn(Optional.empty());
+        when(taskRepository.findTaskViewById(99L)).thenReturn(Optional.empty());
 
         assertThrows(IllegalArgumentException.class, () -> boardService.findTask(99L));
     }
 
     @Test
     void stripHashtags_removesTagsFromTitle() {
-        when(columnRepository.findById(1L)).thenReturn(Optional.of(col));
+        when(columnRepository.findById(1L)).thenReturn(Optional.of(todayColumn));
         when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of());
-        when(taskRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(labelRepository.findById(10L)).thenReturn(Optional.of(urgentLabel));
 
-        Task task = boardService.createQuick("Hola #uno #dos mundo", 1L);
+        Task task = boardService.createQuick("Hola #uno #dos mundo", 1L, 10L);
 
         assertThat(task.getTitle()).isEqualTo("Hola mundo");
+    }
+
+    private BoardColumn column(Long id, String name, int position) {
+        BoardColumn column = new BoardColumn();
+        column.setId(id);
+        column.setName(name);
+        column.setPosition(position);
+        return column;
+    }
+
+    private Task task(Long id, String title, BoardColumn column, int position) {
+        Task task = new Task();
+        task.setId(id);
+        task.setTitle(title);
+        task.setColumn(column);
+        task.setPosition(position);
+        return task;
     }
 }

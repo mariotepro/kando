@@ -14,7 +14,7 @@ Tablero Kanban personal. Simple, sin distracciones, tuyo.
 
 ## Requisitos
 
-- Java 21
+- Java 25
 - Maven 3.9+
 - PostgreSQL 15+
 
@@ -23,10 +23,23 @@ Tablero Kanban personal. Simple, sin distracciones, tuyo.
 ### 1. Base de datos
 
 ```sql
-CREATE DATABASE kando;
 CREATE USER kando WITH PASSWORD 'kando';
-GRANT ALL PRIVILEGES ON DATABASE kando TO kando;
+CREATE DATABASE kando OWNER kando;
 ```
+
+Si la base `kando` ya existía de antes y fue creada por otro usuario, cambia también el owner:
+
+```sql
+ALTER DATABASE kando OWNER TO kando;
+```
+
+Después, conectado ya a la base `kando`, dale permisos sobre el esquema `public` para que Flyway pueda crear su tabla de histórico y ejecutar la migración inicial:
+
+```sql
+GRANT USAGE, CREATE ON SCHEMA public TO kando;
+```
+
+También tienes un ejemplo listo en [resources/postgresql-local-bootstrap.sql](/Users/mariote/Documents/personal/kando/resources/postgresql-local-bootstrap.sql).
 
 ### 2. Configuración
 
@@ -38,9 +51,29 @@ El fichero `src/main/resources/application-local.properties` ya tiene los valore
 mvn spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
+Para desarrollo con recarga automática de cambios, usa mejor:
+
+```bash
+./scripts/dev-local.sh
+```
+
+Si no tienes `entr`, instálalo una vez con:
+
+```bash
+brew install entr
+```
+
+Ese script deja el `spring-boot:run` vivo, sirve plantillas y recursos estáticos directamente desde `src/main/resources`, recompila automáticamente el código Java cuando detecta cambios y hace que `devtools` reinicie la aplicación sin relanzar el comando.
+
+Si necesitas otro puerto temporalmente, puedes arrancarlo así:
+
+```bash
+SERVER_PORT=3001 ./scripts/dev-local.sh
+```
+
 Abre [http://localhost:3000](http://localhost:3000).
 
-La primera vez, la aplicación crea el esquema automáticamente y te redirige a `/setup` para crear el usuario administrador. En versiones posteriores, si hay migraciones pendientes se mostrará ese mismo modal antes de entrar al tablero.
+La primera vez, la aplicación crea el esquema automáticamente y te lleva a `/setup` para crear el usuario administrador. En versiones posteriores, si hay migraciones pendientes se mostrará `/setup` antes del login para que confirmes los cambios de base de datos.
 
 ## Docker
 

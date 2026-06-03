@@ -54,6 +54,10 @@ public class SetupService {
         }
     }
 
+    public boolean requiresSetup() {
+        return hasPendingMigrations() || needsAdminSetup();
+    }
+
     private Flyway buildFlyway() {
         return Flyway.configure()
             .dataSource(dataSource)
