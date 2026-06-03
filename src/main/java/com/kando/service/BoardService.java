@@ -147,7 +147,7 @@ public class BoardService {
      */
     @Transactional
     public Task createQuick(String title, Long columnId) {
-        return createQuick(title, columnId, null);
+        return doCreateQuick(title, columnId, null);
     }
 
     /**
@@ -160,6 +160,10 @@ public class BoardService {
      */
     @Transactional
     public Task createQuick(String title, Long columnId, Long labelId) {
+        return doCreateQuick(title, columnId, labelId);
+    }
+
+    private Task doCreateQuick(String title, Long columnId, Long labelId) {
         BoardColumn column = columnRepository.findById(columnId)
             .orElseThrow(() -> new IllegalArgumentException(COLUMN_NOT_FOUND + columnId));
         String normalizedTitle = stripHashtags(title).trim();
@@ -215,9 +219,8 @@ public class BoardService {
         List<Task> directChildren = task.getParentTask() == null && parentTask == null && labelChanged
             ? findDirectChildren(task, loadOrderedTasks(task.getColumnId()))
             : List.of();
-        Long requestedColumnId = parentTask != null
-            ? parentTask.getColumnId()
-            : (columnId != null ? columnId : task.getColumnId());
+        Long fallbackColumnId = columnId != null ? columnId : task.getColumnId();
+        Long requestedColumnId = parentTask != null ? parentTask.getColumnId() : fallbackColumnId;
 
         boolean parentChanged = !Objects.equals(task.getParentTaskId(), parentTaskId);
         boolean columnChanged = !Objects.equals(task.getColumnId(), requestedColumnId);
@@ -273,7 +276,7 @@ public class BoardService {
      */
     @Transactional
     public void sortColumnByLabel(Long columnId) {
-        sortColumnByLabel(columnId, false);
+        doSortColumnByLabel(columnId, false);
     }
 
     /**
@@ -285,6 +288,10 @@ public class BoardService {
      */
     @Transactional
     public void sortColumnByLabel(Long columnId, boolean descending) {
+        doSortColumnByLabel(columnId, descending);
+    }
+
+    private void doSortColumnByLabel(Long columnId, boolean descending) {
         log.debug("Sorting column {} by label in {} order", columnId, descending ? "descending" : "ascending");
         columnRepository.findById(columnId)
             .orElseThrow(() -> new IllegalArgumentException(COLUMN_NOT_FOUND + columnId));
@@ -599,7 +606,7 @@ public class BoardService {
                 entry.put(HISTORY_EVENT_TYPE_KEY, h.getEventType());
                 return entry;
             })
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public Optional<Instant> findCompletionDate(Long taskId) {

@@ -46,10 +46,6 @@ public class ExportService {
 
             List<Task> tasks = taskRepository.findByColumnIdForExport(column.getId());
             log.debug("Exporting column {} with {} tasks", column.getId(), tasks.size());
-            if (tasks.isEmpty()) {
-                markdown.append("_Sin tareas_\n\n");
-                continue;
-            }
 
             List<Task> rootTasks = tasks.stream()
                 .filter(task -> task.getParentTaskId() == null)
@@ -57,19 +53,18 @@ public class ExportService {
 
             if (rootTasks.isEmpty()) {
                 markdown.append("_Sin tareas_\n\n");
-                continue;
+            } else {
+                boolean isDone = column.isDone();
+                for (Task task : rootTasks) {
+                    appendTask(markdown, task, "", isDone);
+
+                    tasks.stream()
+                        .filter(candidate -> Objects.equals(candidate.getParentTaskId(), task.getId()))
+                        .forEach(subtask -> appendTask(markdown, subtask, "  ", isDone));
+                }
+
+                markdown.append("\n");
             }
-
-            boolean isDone = column.isDone();
-            for (Task task : rootTasks) {
-                appendTask(markdown, task, "", isDone);
-
-                tasks.stream()
-                    .filter(candidate -> Objects.equals(candidate.getParentTaskId(), task.getId()))
-                    .forEach(subtask -> appendTask(markdown, subtask, "  ", isDone));
-            }
-
-            markdown.append("\n");
         }
 
         return markdown.toString();

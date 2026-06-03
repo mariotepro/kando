@@ -71,9 +71,10 @@ class BoardIntegrationTest {
 
         List<BoardColumn> cols = boardService.findAllColumns();
 
-        assertThat(cols).hasSizeGreaterThanOrEqualTo(2);
-        assertThat(cols).anyMatch(c -> c.getName().equals("Hoy"));
-        assertThat(cols).anyMatch(c -> c.getName().equals("Planificado"));
+        assertThat(cols)
+            .hasSizeGreaterThanOrEqualTo(2)
+            .anyMatch(c -> c.getName().equals("Hoy"))
+            .anyMatch(c -> c.getName().equals("Planificado"));
     }
 
     @Test
@@ -233,8 +234,9 @@ class BoardIntegrationTest {
 
         String md = exportService.exportAsMarkdown();
 
-        assertThat(md).contains("## Hoy");
-        assertThat(md).contains("Tarea exportada");
+        assertThat(md)
+            .contains("## Hoy")
+            .contains("Tarea exportada");
     }
 
     @Test
@@ -252,8 +254,9 @@ class BoardIntegrationTest {
 
         String md = exportService.exportAsMarkdown();
 
-        assertThat(md).contains("- [ ] **Padre**");
-        assertThat(md).contains("  - [ ] **Hija**");
+        assertThat(md)
+            .contains("- [ ] **Padre**")
+            .contains("  - [ ] **Hija**");
     }
 
     private Task createTaggedTask(String title) {

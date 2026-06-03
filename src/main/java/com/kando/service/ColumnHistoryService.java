@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -31,7 +32,7 @@ public class ColumnHistoryService {
      * @param column initial task column
      */
     public void recordCreation(Task task, BoardColumn column) {
-        record(task, column, TaskColumnHistory.EVENT_CREATED);
+        writeHistory(task, column, TaskColumnHistory.EVENT_CREATED);
     }
 
     /**
@@ -41,10 +42,10 @@ public class ColumnHistoryService {
      * @param column destination task column
      */
     public void recordColumnChange(Task task, BoardColumn column) {
-        record(task, column, TaskColumnHistory.EVENT_COLUMN_CHANGE);
+        writeHistory(task, column, TaskColumnHistory.EVENT_COLUMN_CHANGE);
     }
 
-    private void record(Task task, BoardColumn column, String eventType) {
+    private void writeHistory(Task task, BoardColumn column, String eventType) {
         Long taskId = task.getId();
         Long columnId = column.getId();
         String columnName = column.getName();
@@ -76,7 +77,7 @@ public class ColumnHistoryService {
                                          boolean columnDone,
                                          String eventType) {
         TransactionTemplate template = new TransactionTemplate(transactionManager);
-        template.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         template.executeWithoutResult(status -> saveHistoryEntry(taskId, columnId, columnName, columnDone, eventType));
     }
 

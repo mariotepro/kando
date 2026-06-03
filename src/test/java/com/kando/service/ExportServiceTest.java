@@ -35,8 +35,9 @@ class ExportServiceTest {
 
         String markdown = exportService.exportAsMarkdown();
 
-        assertThat(markdown).contains("## Hoy");
-        assertThat(markdown).contains("_Sin tareas_");
+        assertThat(markdown)
+            .contains("## Hoy")
+            .contains("_Sin tareas_");
     }
 
     @Test
@@ -89,8 +90,9 @@ class ExportServiceTest {
 
         String markdown = exportService.exportAsMarkdown();
 
-        assertThat(markdown).contains("  > Revisar requisitos");
-        assertThat(markdown).contains("  > Ver documentación");
+        assertThat(markdown)
+            .contains("  > Revisar requisitos")
+            .contains("  > Ver documentación");
     }
 
     @Test
@@ -103,8 +105,9 @@ class ExportServiceTest {
 
         String markdown = exportService.exportAsMarkdown();
 
-        assertThat(markdown).contains("## Hoy");
-        assertThat(markdown).contains("## Hecho");
+        assertThat(markdown)
+            .contains("## Hoy")
+            .contains("## Hecho");
     }
 
     @Test
@@ -130,8 +133,9 @@ class ExportServiceTest {
 
         String markdown = exportService.exportAsMarkdown();
 
-        assertThat(markdown).contains("- [ ] **Padre**");
-        assertThat(markdown).contains("  - [ ] **Hija**");
+        assertThat(markdown)
+            .contains("- [ ] **Padre**")
+            .contains("  - [ ] **Hija**");
     }
 
     @Test

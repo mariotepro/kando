@@ -41,7 +41,7 @@ public class SetupService {
             Flyway flyway = buildFlyway();
             // If baseline can be determined, schema history table exists
             return flyway.info().applied().length == 0;
-        } catch (Exception e) {
+        } catch (Exception _) {
             return true;
         }
     }
@@ -49,7 +49,7 @@ public class SetupService {
     public boolean needsAdminSetup() {
         try {
             return userRepository.count() == 0;
-        } catch (Exception e) {
+        } catch (Exception _) {
             return true;
         }
     }

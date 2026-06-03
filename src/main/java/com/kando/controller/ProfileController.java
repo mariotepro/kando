@@ -5,27 +5,24 @@ import com.kando.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-@Controller
+@RestController
 @RequiredArgsConstructor
 public class ProfileController {
 
     private final UserService userService;
 
     @GetMapping("/api/profile")
-    @ResponseBody
     public ResponseEntity<Map<String, Object>> getProfile(Authentication auth) {
         KandoUser user = userService.getProfileOrFallback(auth.getName());
         return ResponseEntity.ok(toMap(user));
     }
 
     @PutMapping("/api/profile")
-    @ResponseBody
     public ResponseEntity<Map<String, Object>> updateProfile(@RequestBody Map<String, String> body,
                                                               Authentication auth) {
         KandoUser updated = userService.updateProfile(
@@ -48,7 +45,6 @@ public class ProfileController {
     }
 
     @GetMapping("/api/profile/check-username")
-    @ResponseBody
     public ResponseEntity<Map<String, Boolean>> checkUsername(@RequestParam String username,
                                                                Authentication auth) {
         boolean taken = !username.trim().equals(auth.getName())
