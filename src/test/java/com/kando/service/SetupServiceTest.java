@@ -41,4 +41,10 @@ class SetupServiceTest {
 
         assertThat(setupService.needsAdminSetup()).isTrue();
     }
+
+    @Test
+    void isDatabaseEmpty_whenFlywayCannotConnect_returnsTrue() {
+        // With a mock DataSource, Flyway fails to connect → exception caught → returns true
+        assertThat(setupService.isDatabaseEmpty()).isTrue();
+    }
 }

@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @Transactional
@@ -259,7 +260,168 @@ class BoardIntegrationTest {
             .contains("  - [ ] **Hija**");
     }
 
+    // ── updateTaskCompletion ──────────────────────────────────────────────────
+
+    @Test
+    void updateTaskCompletion_setsCompletedTrue() {
+        Task task = createTaggedTask("Completar");
+
+        boardService.updateTaskCompletion(task.getId(), true);
+
+        Task reloaded = taskRepository.findById(task.getId()).orElseThrow();
+        assertThat(reloaded.isCompleted()).isTrue();
+    }
+
+    @Test
+    void updateTaskCompletion_togglesBackToFalse() {
+        Task task = createTaggedTask("Descompletar");
+        boardService.updateTaskCompletion(task.getId(), true);
+
+        boardService.updateTaskCompletion(task.getId(), false);
+
+        Task reloaded = taskRepository.findById(task.getId()).orElseThrow();
+        assertThat(reloaded.isCompleted()).isFalse();
+    }
+
+    // ── findTask ──────────────────────────────────────────────────────────────
+
+    @Test
+    void findTask_existingId_returnsTask() {
+        Task task = createTaggedTask("Buscar");
+
+        Task found = boardService.findTask(task.getId());
+
+        assertThat(found.getId()).isEqualTo(task.getId());
+        assertThat(found.getTitle()).isEqualTo("Buscar");
+    }
+
+    @Test
+    void findTask_unknownId_throwsIllegalArgument() {
+        assertThatThrownBy(() -> boardService.findTask(99999L))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Task not found");
+    }
+
+    // ── sortColumnByLabel ─────────────────────────────────────────────────────
+
+    @Test
+    void sortColumnByLabel_groupsTasksByLabel() {
+        Label backend = labelRepository.save(labelWithName("backend", "#6366f1"));
+        Task t1 = boardService.createQuick("Backend A", colHoy.getId(), backend.getId());
+        Task t2 = boardService.createQuick("Urgente A", colHoy.getId(), labelUrgente.getId());
+        Task t3 = boardService.createQuick("Backend B", colHoy.getId(), backend.getId());
+
+        boardService.sortColumnByLabel(colHoy.getId());
+
+        List<Task> sorted = taskRepository.findByColumnIdOrderByPositionAsc(colHoy.getId());
+        assertThat(sorted.get(0).getId()).isEqualTo(t1.getId());
+        assertThat(sorted.get(1).getId()).isEqualTo(t3.getId());
+        assertThat(sorted.get(2).getId()).isEqualTo(t2.getId());
+    }
+
+    @Test
+    void sortColumnByLabel_descending_reversesOrder() {
+        Label backend = labelRepository.save(labelWithName("backend", "#6366f1"));
+        boardService.createQuick("Backend A", colHoy.getId(), backend.getId());
+        boardService.createQuick("Urgente A", colHoy.getId(), labelUrgente.getId());
+
+        boardService.sortColumnByLabel(colHoy.getId(), true);
+
+        List<Task> sorted = taskRepository.findByColumnIdOrderByPositionAsc(colHoy.getId());
+        assertThat(sorted.get(0).getLabels()).anyMatch(l -> l.getName().equals("urgente"));
+        assertThat(sorted.get(1).getLabels()).anyMatch(l -> l.getName().equals("backend"));
+    }
+
+    @Test
+    void sortColumnByLabel_singleTask_doesNothing() {
+        createTaggedTask("Sola");
+
+        boardService.sortColumnByLabel(colHoy.getId());
+
+        assertThat(taskRepository.findByColumnIdOrderByPositionAsc(colHoy.getId())).hasSize(1);
+    }
+
+    // ── error paths ───────────────────────────────────────────────────────────
+
+    @Test
+    void createQuickTask_withoutLabel_throwsIllegalArgument() {
+        assertThatThrownBy(() -> boardService.createQuick("Sin etiqueta", colHoy.getId()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("label is required");
+    }
+
+    @Test
+    void createQuickTask_blankTitleAfterHashtag_throwsIllegalArgument() {
+        assertThatThrownBy(() -> boardService.createQuick("#urgente", colHoy.getId()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("title is required");
+    }
+
+    @Test
+    void updateTask_unknownTask_throwsIllegalArgument() {
+        assertThatThrownBy(() ->
+            boardService.updateTask(99999L, "Título", null, null, null, colHoy.getId(), null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Task not found");
+    }
+
+    @Test
+    void moveTask_selfParent_throwsIllegalArgument() {
+        Task task = createTaggedTask("Autoref");
+
+        assertThatThrownBy(() ->
+            boardService.moveTask(task.getId(), colHoy.getId(), 0, task.getId()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("cannot be its own parent");
+    }
+
+    @Test
+    void moveTask_parentAlreadySubtask_throwsIllegalArgument() {
+        Task grandparent = createTaggedTask("Abuelo");
+        Task parent      = createTaggedTask("Padre");
+        boardService.moveTask(parent.getId(), colHoy.getId(), 0, grandparent.getId());
+        Task child = createTaggedTask("Nieto");
+
+        assertThatThrownBy(() ->
+            boardService.moveTask(child.getId(), colHoy.getId(), 0, parent.getId()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("subtask");
+    }
+
+    @Test
+    void moveTask_labelMismatch_throwsIllegalArgument() {
+        Label backend = labelRepository.save(labelWithName("backend", "#6366f1"));
+        Task parent = boardService.createQuick("Padre backend", colHoy.getId(), backend.getId());
+        Task child  = createTaggedTask("Hijo urgente");
+
+        assertThatThrownBy(() ->
+            boardService.moveTask(child.getId(), colHoy.getId(), 0, parent.getId()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("etiqueta");
+    }
+
+    @Test
+    void deleteTask_withChildren_promotesThemToRoot() {
+        Task parent = createTaggedTask("Padre");
+        Task child  = createTaggedTask("Hija");
+        boardService.moveTask(child.getId(), colHoy.getId(), 0, parent.getId());
+
+        boardService.deleteTask(parent.getId());
+
+        Task reloadedChild = taskRepository.findById(child.getId()).orElseThrow();
+        assertThat(reloadedChild.getParentTask()).isNull();
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
     private Task createTaggedTask(String title) {
         return boardService.createQuick(title, colHoy.getId(), labelUrgente.getId());
+    }
+
+    private Label labelWithName(String name, String color) {
+        Label l = new Label();
+        l.setName(name);
+        l.setColor(color);
+        return l;
     }
 }
