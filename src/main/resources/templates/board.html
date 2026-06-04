@@ -65,6 +65,7 @@
                 <a th:href="@{/export/md}" class="profile-dropdown-item">Exportar MD</a>
                 <button class="profile-dropdown-item" type="button" id="btnEditMode" onclick="toggleEditMode(); closeProfileDropdown()">Editar columnas</button>
                 <div class="profile-dropdown-divider"></div>
+                <button class="profile-dropdown-item" type="button" onclick="openVersionModal(); closeProfileDropdown()">Acerca de</button>
                 <form th:action="@{/logout}" method="post">
                     <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
                     <button type="submit" class="profile-dropdown-item profile-dropdown-item-danger">Cerrar sesión</button>
@@ -186,6 +187,48 @@
         </div>
     </div>
 </main>
+
+<!-- ── Input modal (columnas) ───────────────────────────────────────────────── -->
+<div class="modal-overlay" id="inputModal" style="display:none" onclick="inputModalOutsideClick(event)">
+    <div class="modal modal-input">
+        <div class="modal-header">
+            <h2 id="inputModalTitle">Nombre de la columna</h2>
+            <button class="btn btn-icon" type="button" onclick="cancelInputModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="field">
+                <input type="text" id="inputModalField" maxlength="128" autocomplete="off"/>
+            </div>
+        </div>
+        <div class="modal-footer" style="justify-content:flex-end">
+            <button class="btn btn-ghost btn-sm" type="button" onclick="cancelInputModal()">Cancelar</button>
+            <button class="btn btn-primary btn-sm" type="button" onclick="confirmInputModal()">Aceptar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Version modal ────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="versionModal" style="display:none" onclick="closeVersionModalOutside(event)">
+    <div class="modal modal-version">
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow">Información</p>
+                <h2>Kando</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="closeVersionModal()">✕</button>
+        </div>
+        <div class="modal-body modal-body-version">
+            <div class="version-logo">
+                <span class="logo-icon">◈</span>
+                <span class="logo-text">kando</span>
+            </div>
+            <div class="version-info">
+                <span class="version-badge" th:text="'v' + ${appVersion}">v1.1.1</span>
+            </div>
+            <p class="version-build" th:text="'Build: ' + ${appBuildTime}">Build: —</p>
+        </div>
+    </div>
+</div>
 
 <!-- ── Task modal ──────────────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="taskModal" style="display:none" onclick="closeModalOutside(event)">
