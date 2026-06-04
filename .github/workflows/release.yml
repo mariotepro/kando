@@ -56,7 +56,7 @@ jobs:
           RELEASE=${CURRENT_VERSION%-SNAPSHOT}
           MAJOR=$(echo "$RELEASE" | cut -d. -f1)
           MINOR=$(echo "$RELEASE" | cut -d. -f2)
-          NEXT_VERSION="$MAJOR.$((MINOR + 1)).0-SNAPSHOT"
+          NEXT_VERSION="$MAJOR.$((MINOR + 1))-SNAPSHOT"
           git checkout develop
           git pull origin develop
           mvn versions:set -DnewVersion="$NEXT_VERSION" -DgenerateBackupPoms=false
