@@ -175,6 +175,7 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - `BoardService`: lógica de tablero, tareas, subtareas, drag-and-drop, filtros visibles soportados por el DOM, ordenación por etiqueta asc/desc, cascada de etiqueta padre-hijas, completado de subtareas e historial de columnas
 - `ColumnHistoryService`: persistencia y lectura del historial de columnas por tarea
 - `LabelService`: CRUD de etiquetas con fuzzy matching (Levenshtein)
+- `GlobalModelAdvice`: inyecta `appVersion` y `appBuildTime` en todos los modelos (vía `BuildProperties`, opcional)
 - `BoardController`: endpoints REST bajo `/api/**`
 - `LabelController`: endpoints REST para etiquetas
 - `ProfileController`: perfil de usuario y validaciones de login/nombre visible
@@ -182,9 +183,15 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - Validaciones: título requerido, etiqueta requerida al crear, sin sub-subtareas, etiqueta compartida padre-hijo, una sola etiqueta activa por tarea
 
 ### Frontend
-- `board.html` + `board.js`: tablero principal con quick add, filtros combinados (título + etiqueta), pickers compactos, subtareas inline, checklist de completado de subtareas, drag-and-drop e historial visual de creación/movimientos
+- `board.html` + `board.js`: tablero principal con quick add, filtros combinados (título + etiqueta), pickers compactos, subtareas inline, checklist de completado de subtareas, drag-and-drop e historial visual de creación/movimientos; modal "Acerca de" con versión y build; modal de input propio (sin `prompt()` nativo)
 - `labels.html` + `labels.js`: gestión de etiquetas, rediseñada con edición inline y creación compacta
 - `main.css`: única hoja de estilos; sección "Board refresh" (a partir de línea ~511) contiene la paleta activa Catppuccin Mocha
+- `favicon.svg`: favicon SVG con el logo `◈` en color primario
+
+### CI/CD
+- `.github/workflows/build.yml`: build + test + SonarCloud + Docker (develop→`latest`, main→`master`+versión semántica). El job Docker solo corre si el quality gate pasa (`-Dsonar.qualitygate.wait=true`). Actions Docker pinadas a SHA completo.
+- `.github/workflows/release.yml`: al mergear develop a main, strip SNAPSHOT en main y bump menor en develop automáticamente.
+- Imagen Docker: multi-plataforma (`linux/amd64`, `linux/arm64`), base Alpine, usuario no-root.
 
 ### Tests
 - Hay cobertura de servicio, controller e integración para tablero, etiquetas, auth, export, setup e historial
@@ -194,7 +201,6 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 
 ## Pendiente / posibles mejoras futuras
 
-- [ ] Docker final configurado y probado en producción
 - [ ] Persistir filtros del board entre recargas/sesiones
 - [ ] Vista de calendario por fecha límite
 - [ ] Búsqueda global de tareas
@@ -204,7 +210,15 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 
 ## Workflow obligatorio para cambios de código
 
-1. **Antes de generar código**: guiar al usuario con el enfoque, confirmar si es necesario
-2. **Después de generar código**: analizar con Sonar MCP (`mcp__sonarcloud_mariote__analyze_code_snippet`) y corregir issues CRITICAL/HIGH antes de commit
-3. **Tests**: ejecutar suite de tests relevantes tras cualquier cambio en Java
-4. **Remotes**: **nunca** hacer push ni commit al remoto — todos los cambios solo en local (ver `feedback_prodevelop_remote_readonly.md`)
+### Antes de generar código
+1. Invocar el skill **`anthropic-skills:excentia-ai-rules-coding`** para aplicar las reglas de calidad Java (cobertura, diseño, logging, JavaDoc, complejidad).
+2. Consultar el estado de Sonar en `sonarcloud_mariote` (proyecto `kando`) para conocer issues previos en la zona a tocar.
+
+### Después de generar código
+3. Analizar con `sonarcloud_mariote` y corregir **todos los issues CRITICAL/HIGH** antes de cualquier commit.
+4. Ejecutar `mvn -B verify` y asegurar **100% de líneas nuevas/modificadas cubiertas** en tests.
+5. Entregar matriz de cobertura por clase modificada.
+
+### Ramas y commits
+- Siempre trabajar en una rama `feature/<nombre>` desde `develop`. Nunca commitear directo a `develop` ni a `main`.
+- El merge a `develop` lo hace el desarrollador tras revisión.
