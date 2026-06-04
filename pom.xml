@@ -13,7 +13,7 @@
 
     <groupId>com.kando</groupId>
     <artifactId>kando</artifactId>
-    <version>1.1.1</version>
+    <version>1.1.2-SNAPSHOT</version>
     <name>kando</name>
     <description>Personal Kanban board</description>
 
@@ -143,6 +143,13 @@
                         </exclude>
                     </excludes>
                 </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

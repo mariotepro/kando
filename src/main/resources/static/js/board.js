@@ -516,7 +516,7 @@ function clearTaskDropTargets() {
 function toggleEditMode() {
   editMode = !editMode;
   const menuBtn = document.getElementById('btnEditMode');
-  if (menuBtn) menuBtn.textContent = editMode ? 'Salir de edición' : 'Editar columnas';
+  if (menuBtn) menuBtn.style.display = editMode ? 'none' : '';
   const doneBtn = document.getElementById('btnEditModeDone');
   if (doneBtn) doneBtn.style.display = editMode ? 'inline-flex' : 'none';
 
@@ -551,13 +551,49 @@ function persistColumnOrder() {
   api('POST', '/api/columns/reorder', ids);
 }
 
+/* ── Input modal helper ───────────────────────────────────────────────────── */
+let _inputModalResolve = null;
+
+function showInputModal(title, defaultValue = '') {
+  document.getElementById('inputModalTitle').textContent = title;
+  const field = document.getElementById('inputModalField');
+  field.value = defaultValue;
+  document.getElementById('inputModal').style.display = 'flex';
+  setTimeout(() => { field.focus(); field.select(); }, 50);
+  return new Promise(resolve => { _inputModalResolve = resolve; });
+}
+
+function confirmInputModal() {
+  const val = document.getElementById('inputModalField').value.trim();
+  closeInputModal(val || null);
+}
+
+function cancelInputModal() {
+  closeInputModal(null);
+}
+
+function closeInputModal(value) {
+  document.getElementById('inputModal').style.display = 'none';
+  if (_inputModalResolve) { _inputModalResolve(value); _inputModalResolve = null; }
+}
+
+function inputModalOutsideClick(event) {
+  if (event.target === document.getElementById('inputModal')) cancelInputModal();
+}
+
+document.addEventListener('keydown', e => {
+  if (document.getElementById('inputModal').style.display !== 'none') {
+    if (e.key === 'Enter') confirmInputModal();
+    if (e.key === 'Escape') cancelInputModal();
+  }
+});
+
 /* ── Column operations ────────────────────────────────────────────────────── */
 function addColumn() {
-  const name = prompt('Nombre de la columna:');
-  if (!name || !name.trim()) {
-    return;
-  }
-  api('POST', '/api/columns', { name }).then(() => location.reload());
+  showInputModal('Nombre de la columna').then(name => {
+    if (!name) return;
+    api('POST', '/api/columns', { name }).then(() => location.reload());
+  });
 }
 
 function renameColumn(btn) {
@@ -565,13 +601,11 @@ function renameColumn(btn) {
   const column = document.querySelector(`.column[data-col-id="${colId}"]`);
   const title = column.querySelector('.column-title');
   const current = title.textContent;
-  const name = prompt('Nuevo nombre:', current);
-  if (!name || name.trim() === current) {
-    return;
-  }
-
-  api('PUT', `/api/columns/${colId}`, { name }).then(() => {
-    title.textContent = name.trim();
+  showInputModal('Nuevo nombre', current).then(name => {
+    if (!name || name === current) return;
+    api('PUT', `/api/columns/${colId}`, { name }).then(() => {
+      title.textContent = name;
+    });
   });
 }
 
@@ -2513,4 +2547,14 @@ function updateNavbarAvatar(data) {
   if (nameEl) nameEl.textContent = data.displayName || data.username;
   const emailEl = document.querySelector('.profile-email');
   if (emailEl) emailEl.textContent = data.email || '';
+}
+
+function openVersionModal() {
+  document.getElementById('versionModal').style.display = 'flex';
+}
+function closeVersionModal() {
+  document.getElementById('versionModal').style.display = 'none';
+}
+function closeVersionModalOutside(event) {
+  if (event.target === document.getElementById('versionModal')) closeVersionModal();
 }
