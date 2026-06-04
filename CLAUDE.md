@@ -1,7 +1,7 @@
 # Kando — guía para Claude
 
 ## Stack
-- **Backend**: Java 21, Spring Boot 3.2, Spring MVC, Spring Security, Spring Data JPA
+- **Backend**: Java 25, Spring Boot 4.0.6, Spring MVC, Spring Security, Spring Data JPA
 - **Frontend**: Thymeleaf + Vanilla JS + SortableJS (CDN)
 - **Base de datos**: PostgreSQL + Flyway (migraciones manuales vía SetupController)
 - **Build**: Maven
@@ -19,8 +19,8 @@ Si hay migraciones pendientes en versiones posteriores, el usuario verá el moda
 ## Estructura
 ```
 src/main/java/com/kando/
-  config/        SecurityConfig, AppStartupRunner
-  controller/    Auth, Board, Label, Export, Setup
+  config/        SecurityConfig, AppStartupRunner, GlobalModelAdvice
+  controller/    Auth, Board, Label, Export, Setup, Profile
   model/         KandoUser, BoardColumn, Task, Label
   repository/    JPA repositories
   service/       Board, Label, User, Setup, Export
@@ -53,8 +53,15 @@ También añadir copia en `resources/` para referencia.
 ## SonarCloud
 - Organización: `mariote-github`
 - Project key: `kando`
+- Servidor MCP: `sonarcloud_mariote`
 - Workflow: `.github/workflows/build.yml` (requiere secret `SONAR_TOKEN`)
-- **Workflow obligatorio Guide-and-Verify**: antes de generar o modificar código, guiar; después, analizar con el plugin de Sonar y corregir issues CRITICAL/HIGH antes de cualquier commit.
+- **Workflow obligatorio Guide-and-Verify**: antes de generar o modificar código, guiar; después, analizar con `sonarcloud_mariote` y corregir issues CRITICAL/HIGH antes de cualquier commit.
+
+## Workflows obligatorios antes de cualquier cambio de código
+
+1. Invocar el skill `anthropic-skills:excentia-ai-rules-coding` para aplicar las reglas de calidad Java.
+2. Seguir el workflow **Guide-and-Verify** con `sonarcloud_mariote`: consultar Sonar antes de generar código y verificar con Sonar después.
+3. Nunca hacer commit sin evidencia de tests y sin pasar el quality gate.
 
 ## Docker
 ```bash
