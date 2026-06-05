@@ -1,12 +1,12 @@
 package com.kando.config;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Optional;
 
 @ControllerAdvice
 public class GlobalModelAdvice {
@@ -14,8 +14,11 @@ public class GlobalModelAdvice {
     private static final DateTimeFormatter FMT =
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
 
-    @Autowired(required = false)
-    private BuildProperties buildProperties;
+    private final BuildProperties buildProperties;
+
+    public GlobalModelAdvice(Optional<BuildProperties> buildProperties) {
+        this.buildProperties = buildProperties.orElse(null);
+    }
 
     @ModelAttribute("appVersion")
     public String appVersion() {

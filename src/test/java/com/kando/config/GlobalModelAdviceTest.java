@@ -2,11 +2,11 @@ package com.kando.config;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.info.BuildProperties;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Optional;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,9 +17,7 @@ class GlobalModelAdviceTest {
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
 
     private GlobalModelAdvice adviceWith(BuildProperties bp) {
-        GlobalModelAdvice advice = new GlobalModelAdvice();
-        ReflectionTestUtils.setField(advice, "buildProperties", bp);
-        return advice;
+        return new GlobalModelAdvice(Optional.ofNullable(bp));
     }
 
     // ── appVersion ────────────────────────────────────────────────────────────
