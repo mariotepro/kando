@@ -25,6 +25,9 @@ const SORT_DIRECTION_NONE = 'none';
 const SORT_DIRECTION_ASC = 'asc';
 const SORT_DIRECTION_DESC = 'desc';
 const COLUMN_SORT_STORAGE_KEY = 'kando_column_sort_directions';
+const THEME_STORAGE_KEY = 'kando_theme';
+const THEME_LIGHT = 'light';
+const THEME_DARK = 'dark';
 const HISTORY_EVENT_CREATED = 'CREATED';
 let boardSearchTerm = '';
 let boardFilterLabelId = null;
@@ -39,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
   syncSortButtons();
   bindBoardFilters();
   bindProfileDropdown();
+  bindThemeToggle();
 
   document.getElementById('btnCreateTask').addEventListener('click', openCreateModal);
   window.addEventListener('resize', syncBoardCentering);
@@ -48,6 +52,44 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.quick-add-input').forEach(bindQuickAddInput);
   document.querySelectorAll('.quick-add-card').forEach(bindQuickAddCard);
 });
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === THEME_LIGHT ? THEME_LIGHT : THEME_DARK;
+}
+
+function syncThemeToggle() {
+  document.querySelectorAll('.theme-toggle-btn').forEach(button => {
+    const isActive = button.dataset.themeValue === currentTheme();
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function applyTheme(theme) {
+  const nextTheme = theme === THEME_LIGHT ? THEME_LIGHT : THEME_DARK;
+  document.documentElement.dataset.theme = nextTheme;
+
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  } catch (error) {
+    // Ignore storage issues and keep the theme applied for the current session.
+  }
+
+  syncThemeToggle();
+}
+
+function bindThemeToggle() {
+  const buttons = document.querySelectorAll('.theme-toggle-btn');
+  if (!buttons.length) {
+    return;
+  }
+
+  syncThemeToggle();
+
+  buttons.forEach(button => {
+    button.addEventListener('click', () => applyTheme(button.dataset.themeValue));
+  });
+}
 
 function syncBoardCentering() {
   const wrapper = document.querySelector('.board-wrapper');
