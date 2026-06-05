@@ -8,8 +8,18 @@
     <link rel="icon" type="image/svg+xml" th:href="@{/favicon.svg}"/>
     <link rel="preconnect" href="https://fonts.googleapis.com"/>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin"/>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-    <link rel="stylesheet" th:href="@{/css/main.css(v='20260603o')}"/>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <script>
+        (function() {
+            try {
+                var theme = localStorage.getItem('kando_theme');
+                document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+            } catch (error) {
+                document.documentElement.dataset.theme = 'dark';
+            }
+        }());
+    </script>
+    <link rel="stylesheet" th:href="@{/css/main.css(v='20260605c')}"/>
 </head>
 <body class="app-body">
 
@@ -58,6 +68,14 @@
                 <div class="profile-dropdown-header">
                     <strong th:text="${userProfile.effectiveName}">Mario</strong>
                     <span class="profile-email" th:text="${userProfile.email != null ? userProfile.email : ''}"></span>
+                </div>
+                <div class="profile-dropdown-divider"></div>
+                <div class="profile-dropdown-group">
+                    <span class="profile-dropdown-label">Apariencia</span>
+                    <div class="theme-toggle" role="group" aria-label="Cambiar tema">
+                        <button class="theme-toggle-btn" type="button" data-theme-value="light" aria-pressed="false">Dia</button>
+                        <button class="theme-toggle-btn" type="button" data-theme-value="dark" aria-pressed="true">Noche</button>
+                    </div>
                 </div>
                 <div class="profile-dropdown-divider"></div>
                 <button class="profile-dropdown-item" type="button" onclick="openProfileModal(); closeProfileDropdown()">Editar perfil</button>
@@ -399,6 +417,6 @@
     };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script th:src="@{/js/board.js(v='20260603l')}"></script>
+<script th:src="@{/js/board.js(v='20260605c')}"></script>
 </body>
 </html>
