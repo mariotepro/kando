@@ -5,7 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Kando — Configuración de base de datos</title>
     <link rel="icon" type="image/svg+xml" th:href="@{/favicon.svg}"/>
-    <link rel="stylesheet" th:href="@{/css/main.css}"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin"/>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <script>
+        (function() {
+            try {
+                var theme = localStorage.getItem('kando_theme');
+                document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+            } catch (error) {
+                document.documentElement.dataset.theme = 'dark';
+            }
+        }());
+    </script>
+    <link rel="stylesheet" th:href="@{/css/main.css(v='20260605c')}"/>
 </head>
 <body class="auth-body">
 
