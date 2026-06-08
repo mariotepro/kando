@@ -42,6 +42,11 @@ public class SecurityConfig {
                 .logoutSuccessUrl("/login?logout")
                 .permitAll()
             )
+            .rememberMe(rm -> rm
+                .key("kando-rmb")
+                .tokenValiditySeconds(30 * 24 * 3600)
+                .alwaysRemember(true)
+            )
             .csrf(csrf -> csrf
                 .ignoringRequestMatchers("/api/**")
             );

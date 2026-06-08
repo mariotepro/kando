@@ -13,14 +13,18 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -517,6 +521,140 @@ class BoardServiceTest {
         assertThat(task.getTitle()).isEqualTo("Hola mundo");
     }
 
+    // ── findStaleDoneTaskIds ──────────────────────────────────────────────────
+
+    @Test
+    void findStaleDoneTaskIds_noTasksInDoneColumns_returnsEmpty() {
+        // Data
+        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
+
+        // Invoke method
+        Set<Long> result = boardService.findStaleDoneTaskIds(List.of(todayColumn), cutoff);
+
+        // Asserts
+        assertThat(result).isEmpty();
+        verify(historyRepository, never()).findLatestDoneInstantsByTaskIds(anyList());
+    }
+
+    @Test
+    void findStaleDoneTaskIds_doneColumnWithNoTasks_returnsEmpty() {
+        // Data
+        doneColumn.setDone(true);
+        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
+
+        // Invoke method
+        Set<Long> result = boardService.findStaleDoneTaskIds(List.of(doneColumn), cutoff);
+
+        // Asserts
+        assertThat(result).isEmpty();
+        verify(historyRepository, never()).findLatestDoneInstantsByTaskIds(anyList());
+    }
+
+    @Test
+    void findStaleDoneTaskIds_freshTaskInDoneColumn_returnsEmpty() {
+        // Data
+        doneColumn.setDone(true);
+        Task freshTask = task(10L, "Fresca", doneColumn, 0);
+        doneColumn.getTasks().add(freshTask);
+        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
+        Instant freshMovedAt = Instant.now();
+
+        // Mock methods
+        List<Object[]> historyRows = historyRows(10L, freshMovedAt);
+        when(historyRepository.findLatestDoneInstantsByTaskIds(List.of(10L))).thenReturn(historyRows);
+
+        // Invoke method
+        Set<Long> result = boardService.findStaleDoneTaskIds(List.of(doneColumn), cutoff);
+
+        // Asserts
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void findStaleDoneTaskIds_staleRootTask_returnsRootId() {
+        // Data
+        doneColumn.setDone(true);
+        Task staleTask = task(10L, "Vieja", doneColumn, 0);
+        doneColumn.getTasks().add(staleTask);
+        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
+        Instant staleMovedAt = Instant.now().minus(8, ChronoUnit.DAYS);
+
+        // Mock methods
+        List<Object[]> historyRows = historyRows(10L, staleMovedAt);
+        when(historyRepository.findLatestDoneInstantsByTaskIds(List.of(10L))).thenReturn(historyRows);
+
+        // Invoke method
+        Set<Long> result = boardService.findStaleDoneTaskIds(List.of(doneColumn), cutoff);
+
+        // Asserts
+        assertThat(result).containsExactly(10L);
+    }
+
+    @Test
+    void findStaleDoneTaskIds_staleRootWithSubtask_includesBoth() {
+        // Data
+        doneColumn.setDone(true);
+        Task staleParent = task(10L, "Padre viejo", doneColumn, 0);
+        Task subtask = task(11L, "Subtarea", doneColumn, 1);
+        subtask.setParentTask(staleParent);
+        doneColumn.getTasks().add(staleParent);
+        doneColumn.getTasks().add(subtask);
+        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
+        Instant staleMovedAt = Instant.now().minus(8, ChronoUnit.DAYS);
+
+        // Mock methods
+        List<Object[]> historyRows = historyRows(10L, staleMovedAt);
+        when(historyRepository.findLatestDoneInstantsByTaskIds(List.of(10L))).thenReturn(historyRows);
+
+        // Invoke method
+        Set<Long> result = boardService.findStaleDoneTaskIds(List.of(doneColumn), cutoff);
+
+        // Asserts
+        assertThat(result).containsExactlyInAnyOrder(10L, 11L);
+    }
+
+    @Test
+    void findStaleDoneTaskIds_mixedFreshAndStale_returnsOnlyStale() {
+        // Data
+        doneColumn.setDone(true);
+        Task staleTask = task(10L, "Vieja", doneColumn, 0);
+        Task freshTask = task(11L, "Fresca", doneColumn, 1);
+        doneColumn.getTasks().add(staleTask);
+        doneColumn.getTasks().add(freshTask);
+        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
+        Instant staleMovedAt = Instant.now().minus(10, ChronoUnit.DAYS);
+        Instant freshMovedAt = Instant.now().minus(2, ChronoUnit.DAYS);
+
+        // Mock methods
+        List<Object[]> historyRows = new java.util.ArrayList<>();
+        historyRows.add(new Object[]{10L, staleMovedAt});
+        historyRows.add(new Object[]{11L, freshMovedAt});
+        when(historyRepository.findLatestDoneInstantsByTaskIds(List.of(10L, 11L))).thenReturn(historyRows);
+
+        // Invoke method
+        Set<Long> result = boardService.findStaleDoneTaskIds(List.of(doneColumn), cutoff);
+
+        // Asserts
+        assertThat(result).containsExactly(10L);
+    }
+
+    @Test
+    void findStaleDoneTaskIds_historyQueryThrows_propagatesException() {
+        // Data
+        doneColumn.setDone(true);
+        Task task = task(10L, "Tarea", doneColumn, 0);
+        doneColumn.getTasks().add(task);
+        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
+
+        // Mock methods
+        when(historyRepository.findLatestDoneInstantsByTaskIds(anyList()))
+            .thenThrow(new RuntimeException("DB error"));
+
+        // Invoke method + Asserts
+        assertThrows(RuntimeException.class,
+            () -> boardService.findStaleDoneTaskIds(List.of(doneColumn), cutoff));
+    }
+
     private BoardColumn column(Long id, String name, int position) {
         BoardColumn column = new BoardColumn();
         column.setId(id);
@@ -532,5 +670,11 @@ class BoardServiceTest {
         task.setColumn(column);
         task.setPosition(position);
         return task;
+    }
+
+    private List<Object[]> historyRows(Long taskId, Instant movedAt) {
+        List<Object[]> rows = new java.util.ArrayList<>();
+        rows.add(new Object[]{taskId, movedAt});
+        return rows;
     }
 }
