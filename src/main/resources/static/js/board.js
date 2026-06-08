@@ -7,6 +7,7 @@ let currentParentTaskId = null;
 let currentLabelId = null;
 let columnSortable = null;
 let dragState = null;
+let dragPointerHandler = null;
 let suppressTaskClickUntil = 0;
 const taskSortables = [];
 const QUICK_LABEL_PATTERN = /#([\w\-áéíóúüñÁÉÍÓÚÜÑ]+)/u;
@@ -19,19 +20,23 @@ const PICKER_VIEWPORT_GAP = 12;
 const PICKER_PANEL_OFFSET = 8;
 const PICKER_MIN_WIDTH = 320;
 const PICKER_MAX_WIDTH = 520;
-const SUBTASK_DROP_BAND_RATIO = 0.18;
-const SUBTASK_DROP_Y_MARGIN = 14;
+const NEST_ENTER_X = 32;
+const NEST_EXIT_X = 16;
 const SORT_DIRECTION_NONE = 'none';
 const SORT_DIRECTION_ASC = 'asc';
 const SORT_DIRECTION_DESC = 'desc';
 const COLUMN_SORT_STORAGE_KEY = 'kando_column_sort_directions';
 const THEME_STORAGE_KEY = 'kando_theme';
+const SCROLL_STORAGE_KEY = 'kando_board_scroll';
 const THEME_LIGHT = 'light';
 const THEME_DARK = 'dark';
 const HISTORY_EVENT_CREATED = 'CREATED';
 let boardSearchTerm = '';
 let boardFilterLabelId = null;
 let activeCpickerId = null;
+let labelSuggestActiveIndex = -1;
+let labelSuggestSourceInput = null;
+let _labelSuggestEl = null;
 
 /* ── Init ─────────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -43,6 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
   bindBoardFilters();
   bindProfileDropdown();
   bindThemeToggle();
+  animateNewlyAddedTask();
+  restoreBoardScroll();
+  initStaleDoneCollapse();
 
   document.getElementById('btnCreateTask').addEventListener('click', openCreateModal);
   window.addEventListener('resize', syncBoardCentering);
@@ -51,6 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.querySelectorAll('.quick-add-input').forEach(bindQuickAddInput);
   document.querySelectorAll('.quick-add-card').forEach(bindQuickAddCard);
+  bindModalAdoptArea();
 });
 
 function currentTheme() {
@@ -101,6 +110,31 @@ function syncBoardCentering() {
   board.classList.toggle('board-centered', board.scrollWidth <= wrapper.clientWidth + 8);
 }
 
+/* ── Stale-done collapse ─────────────────────────────────────────────────── */
+function initStaleDoneCollapse() {
+  document.querySelectorAll('.column[data-col-done="true"]').forEach(col => {
+    const staleCards = [...col.querySelectorAll('.task-card[data-done-stale="true"]')];
+    if (!staleCards.length) {
+      return;
+    }
+    staleCards.forEach(card => card.classList.add('task-stale-hidden'));
+    col.querySelector('.task-list').appendChild(createSeeMoreBtn(staleCards.length));
+  });
+}
+
+function createSeeMoreBtn(count) {
+  const btn = document.createElement('button');
+  btn.className = 'done-see-more-btn';
+  btn.type = 'button';
+  btn.textContent = count === 1 ? 'Ver más (1 tarea)' : `Ver más (${count} tareas)`;
+  btn.addEventListener('click', () => {
+    btn.closest('.task-list').querySelectorAll('.task-card.task-stale-hidden')
+      .forEach(card => card.classList.remove('task-stale-hidden'));
+    btn.remove();
+  });
+  return btn;
+}
+
 /* ── Drag-and-drop tasks ──────────────────────────────────────────────────── */
 function initTaskSortables() {
   document.querySelectorAll('.task-list').forEach(list => {
@@ -115,21 +149,24 @@ function initTaskSortables() {
       preventOnFilter: false,
       onStart(evt) {
         dragState = buildDragState(evt.item);
+        dragState.startX = resolveStartX(evt, evt.item);
+        attachNestTracking(evt.item);
       },
-      onMove(evt) {
-        updateSubtaskDropTarget(evt);
+      onMove() {
         return true;
       },
       onEnd(evt) {
+        detachNestTracking(evt.item);
         const taskId = parseInt(evt.item.dataset.taskId, 10);
         const targetColId = parseInt(evt.to.dataset.colId, 10);
-        const candidate = resolveSubtaskCandidate(evt, evt.item);
-        const parentTaskId = candidate
-          ? parseInt(candidate.dataset.taskId, 10)
-          : (dragState?.pendingParentTaskId || null);
+        const nestParentId = dragState?.pendingParentTaskId ?? null;
+        const detach = Boolean(dragState?.pendingDetach);
 
-        applyDragDomState(evt, parentTaskId);
+        applyDragDomState(evt, nestParentId, detach);
 
+        const parentTaskId = evt.item.dataset.parentTaskId
+          ? parseInt(evt.item.dataset.parentTaskId, 10)
+          : null;
         const newPosition = getTaskIndex(evt.item);
         suppressTaskClickUntil = Date.now() + 220;
 
@@ -151,6 +188,7 @@ function initTaskSortables() {
 function buildDragState(item) {
   return {
     childElements: getDirectSubtaskElements(item),
+    pendingDetach: false,
     pendingParentTaskId: null,
     sourceColId: parseInt(item.closest('.task-list').dataset.colId, 10),
     sourceParentTaskId: item.dataset.parentTaskId ? parseInt(item.dataset.parentTaskId, 10) : null,
@@ -158,72 +196,106 @@ function buildDragState(item) {
   };
 }
 
-function updateSubtaskDropTarget(evt) {
-  if (!dragState) {
-    return true;
-  }
-
-  const candidate = resolveSubtaskCandidate(evt, evt.dragged);
-  clearTaskDropTargets();
-
-  if (!candidate) {
-    dragState.pendingParentTaskId = null;
-    return true;
-  }
-
-  dragState.pendingParentTaskId = parseInt(candidate.dataset.taskId, 10);
-  candidate.classList.add('task-card-drop-target');
-  return true;
-}
-
-function resolveSubtaskCandidate(evt, draggedItem) {
-  const point = resolveInteractionPoint(evt.originalEvent, draggedItem);
-  const pointerCandidate = getTaskCardFromPoint(point, draggedItem);
-  if (isValidSubtaskCandidate(pointerCandidate, draggedItem, point)) {
-    return pointerCandidate;
-  }
-
-  const listCandidate = getTaskCardFromListPoint(evt.to, point, draggedItem);
-  if (isValidSubtaskCandidate(listCandidate, draggedItem, point)) {
-    return listCandidate;
-  }
-
-  const relatedCandidate = evt.related;
-  if (isValidSubtaskCandidate(relatedCandidate, draggedItem, point)) {
-    return relatedCandidate;
-  }
-
-  return null;
-}
-
-function getTaskCardFromPoint(point, draggedItem) {
-  if (!point) {
-    return null;
-  }
-
-  const target = document.elementFromPoint(point.x, point.y);
-  if (!target) {
-    return null;
-  }
-
-  const card = target.closest('.task-card');
-  return card && card !== draggedItem && card.dataset.taskId ? card : null;
-}
-
-function getTaskCardFromListPoint(list, point, draggedItem) {
-  if (!list || !point) {
-    return null;
-  }
-
-  return [...list.querySelectorAll('.task-card[data-task-id]')].find(card => {
-    if (card === draggedItem) {
-      return false;
+// Nesting is driven by the horizontal axis (Notion/outliner style): reordering stays vertical,
+// and pushing the dragged card to the right turns it into a subtask of the card directly above.
+function attachNestTracking(draggedItem) {
+  dragPointerHandler = event => {
+    const point = getPointerCoordinates(event);
+    if (point) {
+      updateNestIntent(draggedItem, point);
     }
+  };
+  document.addEventListener('dragover', dragPointerHandler, true);
+  document.addEventListener('touchmove', dragPointerHandler, true);
+}
 
-    const rect = card.getBoundingClientRect();
-    return point.y >= rect.top - SUBTASK_DROP_Y_MARGIN
-      && point.y <= rect.bottom + SUBTASK_DROP_Y_MARGIN;
-  }) || null;
+function detachNestTracking(draggedItem) {
+  if (dragPointerHandler) {
+    document.removeEventListener('dragover', dragPointerHandler, true);
+    document.removeEventListener('touchmove', dragPointerHandler, true);
+    dragPointerHandler = null;
+  }
+  clearNestIntent(draggedItem);
+}
+
+function updateNestIntent(draggedItem, point) {
+  if (!dragState) {
+    return;
+  }
+
+  const activeIntent = dragState.pendingParentTaskId != null || dragState.pendingDetach;
+  const threshold = activeIntent ? NEST_EXIT_X : NEST_ENTER_X;
+  const deltaX = point.x - dragState.startX;
+  const target = deltaX >= threshold ? resolveNestParent(draggedItem) : null;
+  const detach = dragState.wasSubtask && deltaX <= -threshold;
+
+  clearNestIntent(draggedItem);
+
+  if (target) {
+    dragState.pendingParentTaskId = target.parentId;
+    dragState.pendingDetach = false;
+    draggedItem.classList.add('task-card-nesting');
+    target.rootCard.classList.add('task-card-drop-target');
+    return;
+  }
+
+  if (detach) {
+    dragState.pendingParentTaskId = null;
+    dragState.pendingDetach = true;
+    draggedItem.classList.add('task-card-detaching');
+  } else {
+    dragState.pendingParentTaskId = null;
+    dragState.pendingDetach = false;
+  }
+}
+
+function resolveNestParent(draggedItem) {
+  let candidate = draggedItem.previousElementSibling;
+  while (candidate
+      && !(candidate.classList.contains('task-card') && candidate.dataset.taskId && !isDraggedOwnChild(candidate))) {
+    candidate = candidate.previousElementSibling;
+  }
+  if (!candidate) {
+    return null;
+  }
+
+  const parentId = candidate.dataset.parentTaskId
+    ? parseInt(candidate.dataset.parentTaskId, 10)
+    : parseInt(candidate.dataset.taskId, 10);
+  if (parentId === parseInt(draggedItem.dataset.taskId, 10)) {
+    return null;
+  }
+
+  const list = draggedItem.closest('.task-list');
+  const rootCard = list.querySelector(`.task-card[data-task-id="${parentId}"]`);
+  if (!rootCard) {
+    return null;
+  }
+
+  const draggedLabel = draggedItem.dataset.labelId;
+  const parentLabel = rootCard.dataset.labelId;
+  if (draggedLabel && parentLabel && draggedLabel !== parentLabel) {
+    return null;
+  }
+
+  return { parentId, rootCard };
+}
+
+function isDraggedOwnChild(card) {
+  return Boolean(dragState?.childElements.some(child => child.dataset.taskId === card.dataset.taskId));
+}
+
+function clearNestIntent(draggedItem) {
+  clearTaskDropTargets();
+  if (draggedItem) {
+    draggedItem.classList.remove('task-card-nesting');
+    draggedItem.classList.remove('task-card-detaching');
+  } else {
+    document.querySelectorAll('.task-card-nesting, .task-card-detaching').forEach(card => {
+      card.classList.remove('task-card-nesting');
+      card.classList.remove('task-card-detaching');
+    });
+  }
 }
 
 function getPointerCoordinates(pointerEvent) {
@@ -245,60 +317,17 @@ function getPointerCoordinates(pointerEvent) {
   };
 }
 
-function resolveInteractionPoint(pointerEvent, fallbackElement) {
-  const point = getPointerCoordinates(pointerEvent);
+function resolveStartX(evt, item) {
+  const point = getPointerCoordinates(evt?.originalEvent);
   if (point) {
-    return point;
+    return point.x;
   }
 
-  const rect = fallbackElement?.getBoundingClientRect();
-  if (!rect) {
-    return null;
-  }
-
-  return {
-    x: rect.left + rect.width * 0.56,
-    y: rect.top + rect.height / 2
-  };
+  const rect = item.getBoundingClientRect();
+  return rect.left + (rect.width / 2);
 }
 
-function isValidSubtaskCandidate(candidate, draggedItem, point) {
-  if (!candidate || !candidate.classList || !candidate.classList.contains('task-card') || !candidate.dataset.taskId) {
-    return false;
-  }
-
-  if (candidate === draggedItem || candidate.dataset.parentTaskId) {
-    return false;
-  }
-
-  if (dragState?.childElements.some(child => child.dataset.taskId === candidate.dataset.taskId)) {
-    return false;
-  }
-
-  const draggedLabel = draggedItem.dataset.labelId;
-  const candidateLabel = candidate.dataset.labelId;
-  if (draggedLabel && candidateLabel && draggedLabel !== candidateLabel) {
-    return false;
-  }
-
-  return isPointInSubtaskBand(candidate, point);
-}
-
-function isPointInSubtaskBand(card, point) {
-  if (!point) {
-    return false;
-  }
-
-  const rect = card.getBoundingClientRect();
-  const bandTop = rect.top + rect.height * SUBTASK_DROP_BAND_RATIO;
-  const bandBottom = rect.bottom - rect.height * SUBTASK_DROP_BAND_RATIO;
-  return point.y >= bandTop - SUBTASK_DROP_Y_MARGIN
-    && point.y <= bandBottom + SUBTASK_DROP_Y_MARGIN
-    && point.x >= rect.left - 10
-    && point.x <= rect.right + 10;
-}
-
-function applyDragDomState(evt, parentTaskId) {
+function applyDragDomState(evt, parentTaskId, detach) {
   const card = evt.item;
   const targetList = evt.to;
   const targetColId = parseInt(targetList.dataset.colId, 10);
@@ -308,6 +337,11 @@ function applyDragDomState(evt, parentTaskId) {
     moveCardAfterSubtree(card, parentCard, targetList);
     setTaskAsSubtask(card, parentTaskId, targetColId);
     promoteDraggedChildrenToRoot();
+    return;
+  }
+
+  if (detach) {
+    setTaskAsRoot(card, targetColId);
     return;
   }
 
@@ -1016,8 +1050,27 @@ function bindQuickAddInput(input) {
   }
 
   input.dataset.quickBound = 'true';
-  input.addEventListener('input', () => clearQuickAddState(input));
+
+  input.addEventListener('input', () => {
+    clearQuickAddState(input);
+    showLabelSuggest(input);
+  });
+
   input.addEventListener('keydown', event => {
+    if (isLabelSuggestOpen()) {
+      if (event.key === 'ArrowDown') { event.preventDefault(); navigateLabelSuggest(1); return; }
+      if (event.key === 'ArrowUp')   { event.preventDefault(); navigateLabelSuggest(-1); return; }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        const active = getLabelSuggestPopup().querySelector('.label-suggest-item.is-active');
+        if (active) { event.preventDefault(); applyLabelSuggestion(input, active.dataset.labelName); return; }
+        if (event.key === 'Tab') {
+          const first = getLabelSuggestPopup().querySelector('.label-suggest-item');
+          if (first) { event.preventDefault(); applyLabelSuggestion(input, first.dataset.labelName); return; }
+        }
+      }
+      if (event.key === 'Escape') { event.preventDefault(); hideLabelSuggest(); return; }
+    }
+
     if (event.key === 'Enter') {
       event.preventDefault();
       submitQuickAddInput(input);
@@ -1030,11 +1083,12 @@ function bindQuickAddInput(input) {
     }
   });
 
-  if (isInlineSubtaskInput(input)) {
-    input.addEventListener('blur', () => {
+  input.addEventListener('blur', () => {
+    setTimeout(hideLabelSuggest, 140);
+    if (isInlineSubtaskInput(input)) {
       window.setTimeout(() => cleanupInlineSubtaskDraft(input), 0);
-    });
-  }
+    }
+  });
 }
 
 function bindQuickAddCard(card) {
@@ -1084,7 +1138,13 @@ function quickAddFromInput(input) {
   const colId = parseInt(input.dataset.colId, 10);
   clearQuickAddState(input);
   api('POST', '/api/tasks/quick', { title, columnId: colId })
-    .then(() => location.reload())
+    .then(task => {
+      try {
+        sessionStorage.setItem('kando_new_task_col', String(colId));
+        if (task?.id) sessionStorage.setItem('kando_new_task_id', String(task.id));
+      } catch (e) { /* ignore */ }
+      reloadPreservingScroll();
+    })
     .catch(async error => {
       setQuickAddState(input, await extractApiErrorMessage(error, 'No he podido crear la tarea.'));
     });
@@ -1146,7 +1206,7 @@ function quickAddSubtaskFromInput(input) {
       columnId,
       parentTaskId
     }))
-    .then(() => location.reload())
+    .then(() => reloadPreservingScroll())
     .catch(async error => {
       setQuickAddState(input, await extractApiErrorMessage(error, 'No he podido crear la subtarea.'));
     });
@@ -1262,6 +1322,175 @@ function clearQuickAddState(input) {
   feedback.textContent = '';
 }
 
+/* ── Quick-add label suggest ─────────────────────────────────────────────── */
+function getLabelSuggestPopup() {
+  if (!_labelSuggestEl) {
+    _labelSuggestEl = document.createElement('div');
+    _labelSuggestEl.id = 'labelSuggestPopup';
+    _labelSuggestEl.className = 'label-suggest-popup';
+    document.body.appendChild(_labelSuggestEl);
+  }
+  return _labelSuggestEl;
+}
+
+function isLabelSuggestOpen() {
+  return Boolean(_labelSuggestEl?.classList.contains('is-open'));
+}
+
+function getLabelQueryAtCursor(input) {
+  const val = input.value;
+  const pos = input.selectionStart ?? val.length;
+  const before = val.slice(0, pos);
+  const match = before.match(/#([\w\-áéíóúüñÁÉÍÓÚÜÑ]*)$/u);
+  if (match) {
+    return { query: match[1].toLowerCase(), hashStart: pos - match[0].length };
+  }
+  return null;
+}
+
+function showLabelSuggest(input) {
+  const info = getLabelQueryAtCursor(input);
+  if (!info) { hideLabelSuggest(); return; }
+
+  const labels = (window.KANDO?.labels || [])
+    .filter(l => l.name.toLowerCase().includes(info.query))
+    .slice(0, 8);
+
+  if (!labels.length) { hideLabelSuggest(); return; }
+
+  const popup = getLabelSuggestPopup();
+  labelSuggestSourceInput = input;
+  labelSuggestActiveIndex = -1;
+
+  popup.innerHTML = '';
+  labels.forEach(label => {
+    const item = document.createElement('div');
+    item.className = 'label-suggest-item';
+    item.dataset.labelName = label.name;
+
+    const dot = document.createElement('span');
+    dot.className = 'label-suggest-dot';
+    dot.style.background = label.color || DEFAULT_LABEL_COLOR;
+
+    const text = document.createElement('span');
+    text.textContent = label.name;
+
+    item.append(dot, text);
+    item.addEventListener('mousedown', e => {
+      e.preventDefault();
+      applyLabelSuggestion(input, label.name);
+    });
+    popup.append(item);
+  });
+
+  popup.classList.add('is-open');
+  positionLabelSuggestPopup(input);
+}
+
+function hideLabelSuggest() {
+  if (!_labelSuggestEl) return;
+  _labelSuggestEl.classList.remove('is-open');
+  _labelSuggestEl.innerHTML = '';
+  labelSuggestSourceInput = null;
+  labelSuggestActiveIndex = -1;
+}
+
+function positionLabelSuggestPopup(input) {
+  const popup = getLabelSuggestPopup();
+  const rect = input.getBoundingClientRect();
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const popupH = popup.offsetHeight || 120;
+  const top = spaceBelow > popupH + 8 || spaceBelow > 80
+    ? rect.bottom + 4
+    : rect.top - popupH - 4;
+
+  popup.style.left = rect.left + 'px';
+  popup.style.top = top + 'px';
+  popup.style.minWidth = Math.max(160, rect.width) + 'px';
+}
+
+function applyLabelSuggestion(input, labelName) {
+  const info = getLabelQueryAtCursor(input);
+  if (!info) return;
+
+  const val = input.value;
+  const pos = input.selectionStart ?? val.length;
+  const before = val.slice(0, info.hashStart);
+  const after = val.slice(pos);
+  const replacement = '#' + labelName;
+  const tail = after.startsWith(' ') ? after : ' ' + after;
+
+  input.value = before + replacement + tail;
+  const newPos = before.length + replacement.length + 1;
+  input.setSelectionRange(newPos, newPos);
+
+  hideLabelSuggest();
+  clearQuickAddState(input);
+}
+
+function navigateLabelSuggest(delta) {
+  const popup = getLabelSuggestPopup();
+  const items = [...popup.querySelectorAll('.label-suggest-item')];
+  if (!items.length) return;
+
+  items.forEach(i => i.classList.remove('is-active'));
+  labelSuggestActiveIndex = Math.max(-1, Math.min(items.length - 1, labelSuggestActiveIndex + delta));
+  if (labelSuggestActiveIndex >= 0) {
+    items[labelSuggestActiveIndex].classList.add('is-active');
+  }
+}
+
+/* ── Scroll preservation across reload ──────────────────────────────────── */
+function reloadPreservingScroll() {
+  const wrapper = document.querySelector('.board-wrapper');
+  if (wrapper) {
+    try {
+      sessionStorage.setItem(SCROLL_STORAGE_KEY, JSON.stringify({ x: wrapper.scrollLeft, y: wrapper.scrollTop }));
+    } catch (e) { /* ignore */ }
+  }
+  location.reload();
+}
+
+function restoreBoardScroll() {
+  let pos;
+  try {
+    const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+    if (!raw) return;
+    pos = JSON.parse(raw);
+    sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+  } catch (e) { return; }
+  const wrapper = document.querySelector('.board-wrapper');
+  if (wrapper && pos) {
+    wrapper.scrollLeft = pos.x || 0;
+    wrapper.scrollTop  = pos.y || 0;
+  }
+}
+
+/* ── New task entrance animation ─────────────────────────────────────────── */
+function animateNewlyAddedTask() {
+  let colId, taskId;
+  try {
+    colId  = sessionStorage.getItem('kando_new_task_col');
+    taskId = sessionStorage.getItem('kando_new_task_id');
+  } catch (e) { return; }
+  if (!colId) return;
+  try {
+    sessionStorage.removeItem('kando_new_task_col');
+    sessionStorage.removeItem('kando_new_task_id');
+  } catch (e) { /* ignore */ }
+
+  const list = document.querySelector(`.task-list[data-col-id="${colId}"]`);
+  if (!list) return;
+
+  const newest = taskId
+    ? list.querySelector(`.task-card[data-task-id="${taskId}"]`)
+    : list.querySelector('.task-card[data-task-id]:not(.task-card-subtask)');
+  if (!newest) return;
+
+  newest.classList.add('task-card-new');
+  newest.addEventListener('animationend', () => newest.classList.remove('task-card-new'), { once: true });
+}
+
 /* ── Task cards ───────────────────────────────────────────────────────────── */
 function bindTaskCardInteractions() {
   document.querySelectorAll('.task-card[data-task-id]').forEach(card => {
@@ -1309,7 +1538,7 @@ function bindDeleteTaskButton(button) {
     if (Date.now() < suppressTaskClickUntil) return;
     const taskId = parseInt(event.currentTarget.dataset.taskId, 10);
     if (!confirm('¿Eliminar esta tarea?')) return;
-    api('DELETE', `/api/tasks/${taskId}`).then(() => location.reload());
+    api('DELETE', `/api/tasks/${taskId}`).then(() => reloadPreservingScroll());
   });
 }
 
@@ -1944,7 +2173,7 @@ function saveTask() {
       labelId: currentLabelId,
       columnId: currentTaskColumnId,
       parentTaskId: currentParentTaskId
-    }).then(() => location.reload())
+    }).then(() => reloadPreservingScroll())
       .catch(async error => {
         alert(await extractApiErrorMessage(error, 'No he podido guardar la tarea.'));
       });
@@ -1960,7 +2189,7 @@ function saveTask() {
       columnId: currentTaskColumnId,
       parentTaskId: currentParentTaskId
     }))
-    .then(() => location.reload())
+    .then(() => reloadPreservingScroll())
     .catch(async error => {
       alert(await extractApiErrorMessage(error, 'No he podido crear la tarea.'));
     });
@@ -1973,7 +2202,7 @@ function deleteCurrentTask() {
   if (!confirm('¿Eliminar esta tarea?')) {
     return;
   }
-  api('DELETE', `/api/tasks/${currentTaskId}`).then(() => location.reload());
+  api('DELETE', `/api/tasks/${currentTaskId}`).then(() => reloadPreservingScroll());
 }
 
 function closeModal() {
@@ -2062,12 +2291,14 @@ function renderModalSubtasks(task) {
   if (!task || task.parentTaskId) {
     field.style.display = 'none';
     list.innerHTML = '';
+    resetModalAdoptArea(false);
     return;
   }
 
-  const subtasks = findDirectSubtaskCards(task.id);
+  const subtasks = [...document.querySelectorAll(`.task-card[data-parent-task-id="${task.id}"]`)];
   field.style.display = '';
   list.innerHTML = '';
+  resetModalAdoptArea(true);
 
   if (!subtasks.length) {
     const empty = document.createElement('p');
@@ -2107,7 +2338,18 @@ function renderModalSubtasks(task) {
     title.className = 'modal-subtask-title';
     title.textContent = card.querySelector('.task-title')?.textContent?.trim() || 'Subtarea';
 
-    item.append(toggle, title);
+    const detach = document.createElement('button');
+    detach.type = 'button';
+    detach.className = 'modal-subtask-detach';
+    detach.title = 'Desvincular subtarea';
+    detach.setAttribute('aria-label', 'Desvincular subtarea');
+    detach.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    detach.addEventListener('click', event => {
+      event.stopPropagation();
+      detachSubtaskFromModal(parseInt(card.dataset.taskId, 10));
+    });
+
+    item.append(toggle, title, detach);
     list.appendChild(item);
   });
 }
@@ -2121,6 +2363,135 @@ function applyModalSubtaskToggleVisual(toggle, completed) {
 function findDirectSubtaskCards(taskId) {
   const parentCard = document.querySelector(`.task-card[data-task-id="${taskId}"]`);
   return parentCard ? getDirectSubtaskElements(parentCard) : [];
+}
+
+/* ── Subtask adopt / detach from modal ──────────────────────────────────────── */
+
+function bindModalAdoptArea() {
+  const toggleBtn = document.getElementById('modalAdoptToggle');
+  const picker    = document.getElementById('modalAdoptPicker');
+  const input     = document.getElementById('modalAdoptInput');
+  if (!toggleBtn || !picker || !input) {
+    return;
+  }
+  toggleBtn.addEventListener('click', () => {
+    const open = picker.style.display !== 'none';
+    picker.style.display = open ? 'none' : '';
+    if (!open) {
+      positionAdoptPicker();
+      input.value = '';
+      renderModalAdoptResults('');
+      setTimeout(() => input.focus(), 50);
+    }
+  });
+  input.addEventListener('input', () => renderModalAdoptResults(input.value.trim().toLowerCase()));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      picker.style.display = 'none';
+      toggleBtn.focus();
+    }
+  });
+}
+
+function positionAdoptPicker() {
+  const picker = document.getElementById('modalAdoptPicker');
+  if (!picker) {
+    return;
+  }
+  setTimeout(() => picker.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 40);
+}
+
+function resetModalAdoptArea(visible) {
+  const wrap   = document.getElementById('modalAdoptWrap');
+  const picker = document.getElementById('modalAdoptPicker');
+  const input  = document.getElementById('modalAdoptInput');
+  if (wrap)   wrap.style.display   = visible ? '' : 'none';
+  if (picker) picker.style.display = 'none';
+  if (input)  input.value          = '';
+}
+
+function renderModalAdoptResults(searchTerm) {
+  const container = document.getElementById('modalAdoptResults');
+  if (!container) {
+    return;
+  }
+  const options = collectParentOptions()
+    .filter(o => !searchTerm || o.title.toLowerCase().includes(searchTerm))
+    .sort((a, b) => a.title.localeCompare(b.title, 'es', { sensitivity: 'base' }))
+    .slice(0, 10);
+
+  container.innerHTML = '';
+  if (!options.length) {
+    const empty = document.createElement('p');
+    empty.className = 'modal-adopt-empty';
+    empty.textContent = searchTerm ? 'Sin coincidencias.' : 'No hay tareas disponibles con la misma etiqueta.';
+    container.appendChild(empty);
+    return;
+  }
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'modal-adopt-item';
+    btn.textContent = opt.title;
+    btn.addEventListener('click', () => adoptTaskAsSubtask(opt.id));
+    container.appendChild(btn);
+  });
+}
+
+async function detachSubtaskFromModal(childTaskId) {
+  try {
+    const task = await api('GET', `/api/tasks/${childTaskId}`);
+    await api('PUT', `/api/tasks/${childTaskId}`, {
+      title:        task.title,
+      notes:        task.notes || '',
+      dueDate:      task.dueDate || null,
+      labelId:      task.primaryLabel?.id || null,
+      columnId:     task.columnId,
+      parentTaskId: null
+    });
+    const childCard  = document.querySelector(`.task-card[data-task-id="${childTaskId}"]`);
+    const parentCard = document.querySelector(`.task-card[data-task-id="${currentTaskId}"]`);
+    if (childCard && parentCard) {
+      const remainingChildren = [...document.querySelectorAll(`.task-card[data-parent-task-id="${currentTaskId}"]`)]
+        .filter(c => c !== childCard);
+      setTaskAsRoot(childCard, childCard.dataset.columnId);
+      const insertAfter = remainingChildren.length
+        ? remainingChildren[remainingChildren.length - 1]
+        : parentCard;
+      insertAfter.after(childCard);
+    } else if (childCard) {
+      setTaskAsRoot(childCard, childCard.dataset.columnId);
+    }
+    renderModalSubtasks({ id: currentTaskId, parentTaskId: null });
+  } catch (err) {
+    alert(await extractApiErrorMessage(err, 'No se pudo desvincular la subtarea.'));
+  }
+}
+
+async function adoptTaskAsSubtask(childTaskId) {
+  try {
+    const task = await api('GET', `/api/tasks/${childTaskId}`);
+    await api('PUT', `/api/tasks/${childTaskId}`, {
+      title:        task.title,
+      notes:        task.notes || '',
+      dueDate:      task.dueDate || null,
+      labelId:      task.primaryLabel?.id || null,
+      columnId:     task.columnId,
+      parentTaskId: currentTaskId
+    });
+    const childCard  = document.querySelector(`.task-card[data-task-id="${childTaskId}"]`);
+    const parentCard = document.querySelector(`.task-card[data-task-id="${currentTaskId}"]`);
+    if (childCard && parentCard) {
+      const parentList = parentCard.closest('.task-list');
+      moveCardAfterSubtree(childCard, parentCard, parentList);
+      setTaskAsSubtask(childCard, currentTaskId, parentCard.dataset.columnId);
+    }
+    document.getElementById('modalAdoptPicker').style.display = 'none';
+    renderModalSubtasks({ id: currentTaskId, parentTaskId: null });
+  } catch (err) {
+    alert(await extractApiErrorMessage(err, 'No se pudo vincular la tarea como subtarea.'));
+  }
 }
 
 async function extractApiErrorMessage(error, fallbackMessage) {

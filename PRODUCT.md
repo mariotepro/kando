@@ -2,6 +2,7 @@
 
 > **Leer este archivo al inicio de cada sesión** para tener el contexto completo del proyecto.
 > El contexto técnico de stack y arranque está en `CLAUDE.md`.
+- Siempre tener todas las funcionalidades documentadas en este PRODUCT.md. Si se añade una nueva funcionalidad, se documenta que existe (así nunca se pierde funcionalidad)
 
 ---
 
@@ -64,14 +65,17 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - Si se elimina el padre, las subtareas suben a nivel raíz
 - **Botón + en tarjeta padre**: icono "+" en la esquina inferior derecha de las tarjetas raíz. Abre una subfila inline justo debajo del bloque del padre; no usa modal
 - **Checklist de completado**: cada subtarea tiene un check en el board y otro en el modal de su tarea padre; ambos comparten el mismo estado persistido
-- Drag & drop: soltar una tarea sobre otra tarea raíz, dentro de una zona amplia, la convierte en subtarea
+- Drag & drop para anidar: **modelo de indentación horizontal** (estilo Notion/outliner). El eje vertical reordena como siempre; para convertir una tarea en subtarea se **empuja el cursor a la derecha** mientras se arrastra. Si la tarjeta ya es subtarea, se puede **empujar a la izquierda** para devolverla a nivel raíz. Al cruzar el umbral, la tarjeta arrastrada muestra una pista visual (`↳` al entrar como hija, `↰` al salir a raíz) y la tarjeta de arriba (su futuro padre) se resalta en verde. Soltar fuera del umbral = reordenar normal. Umbral con histéresis (entra a 32px, sale a 16px) para que no parpadee
 
 ### Drag & Drop
 
 - Arrastrar tareas entre columnas
-- Arrastrar tareas sobre una tarea raíz compatible = hacer subtarea
+- Reordenar tareas usa el eje vertical; anidar y desanidar usa el eje horizontal
+- Empujar una tarea a la derecha al arrastrar = convertirla en subtarea de la tarea raíz compatible inmediatamente superior
+- Empujar una subtarea a la izquierda al arrastrar = devolverla a nivel raíz
+- El feedback visual se activa antes de soltar: `↳` para entrar como hija, `↰` para salir a raíz y resaltado del futuro padre cuando aplica
 - Si se arrastra una tarea padre, sus subtareas directas viajan con ella como bloque
-- Si se arrastra una subtarea a otra columna como tarea normal, recupera al instante su chip de etiqueta y su botón `+`
+- Si se arrastra una subtarea a otra columna como tarea normal, pasa a nivel raíz y recupera al instante su chip de etiqueta y su botón `+`
 - Arrastrar columnas en modo edición
 - Implementado con SortableJS
 
@@ -131,6 +135,36 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - Exportación MD: las tareas en columnas `done` usan `- [x]` y añaden ✅ + fecha de finalización
 - Icono de edición y borrado en columnas: SVGs limpios (sin emojis)
 - Arrastrar columnas en modo edición: desde cualquier punto del header (cursor `grab`), sin los 6 puntos
+
+### Quick-add mejorado
+
+- El cajetín de entrada **está arriba del todo** en cada columna (no al final)
+- Las tareas creadas por quick-add se insertan en **primera posición** (top de la columna)
+- Al crear una tarea, la card nueva aparece con una **animación de entrada**: cae desde arriba, rebota levemente y muestra un breve glow púrpura
+- **Sugerencia de etiqueta inline**: al escribir `#` en el quick-add aparece un desplegable con las etiquetas que coinciden; se navega con `↑↓`, se acepta con `Enter` o `Tab`, se descarta con `Escape`; el clic también funciona
+
+### Scroll preservado en recarga
+
+- Al guardar, eliminar o añadir subtareas, el tablero **mantiene la posición de scroll** exacta (no vuelve al principio)
+- Afecta a: guardar tarea (modal), eliminar tarea (card y modal), añadir subtarea inline, quick-add de tarea raíz
+
+### Colapso de tareas antiguas en columnas "done"
+
+- En columnas marcadas como `done`, las tareas (y sus subtareas) que llevan más de **7 días** en esa columna se ocultan automáticamente
+- Al final de la columna aparece un botón `──── Ver más (N tareas) ────` que las revela
+- El cálculo se hace en el backend consultando `task_column_history`; la detección es por tarea raíz — las subtareas heredan el estado de su padre
+- El estado de colapso no se persiste: cada carga de página vuelve a colapsar
+
+### Columnas sin límite de altura
+
+- Las columnas crecen con su contenido — no hay `max-height` ni altura fija
+- La columna con más tareas marca la altura; el resto se estiran hasta igualarla
+- El tablero hace scroll vertical cuando el contenido supera la pantalla
+
+### Sesión persistente
+
+- Sesión de **30 días** de duración (`server.servlet.session.timeout=30d`)
+- Cookie `remember-me` con validez de 30 días (`SecurityConfig`): el login persiste aunque se cierre y reabra el navegador
 
 ### Etiquetas (como modal)
 
@@ -201,10 +235,7 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 
 ## Pendiente / posibles mejoras futuras
 
-- [ ] Persistir filtros del board entre recargas/sesiones
-- [ ] Vista de calendario por fecha límite
-- [ ] Búsqueda global de tareas
-- [ ] Notificaciones de fecha límite próxima
+- [ ] Hacer que funcione bien en navegador movil (iPhone 17 pro)
 
 ---
 

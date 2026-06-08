@@ -19,7 +19,7 @@
             }
         }());
     </script>
-    <link rel="stylesheet" th:href="@{/css/main.css(v='20260605c')}"/>
+    <link rel="stylesheet" th:href="@{/css/main.css(v='20260609i')}"/>
 </head>
 <body class="app-body">
 
@@ -99,7 +99,7 @@
         <div class="board" id="board">
             <div th:each="col : ${columns}"
                  class="column"
-                 th:data-col-id="${col.id}">
+                 th:attr="data-col-id=${col.id},data-col-done=${col.done}">
 
                 <div class="column-header">
                     <div class="column-header-main">
@@ -137,13 +137,23 @@
                 </div>
 
                 <div class="task-list" th:data-col-id="${col.id}">
+                    <div class="quick-add-card" th:data-col-id="${col.id}">
+                        <input type="text"
+                               class="quick-add-input"
+                               th:id="|quick-add-${col.id}|"
+                               th:data-col-id="${col.id}"
+                               placeholder="Nueva tarea"
+                               autocomplete="off"/>
+                        <span class="quick-add-feedback" aria-live="polite"></span>
+                    </div>
+
                     <div th:each="task : ${col.tasks}"
                          class="task-card"
                          th:classappend="${task.subtask} ? ' task-card-subtask' : ''"
                          th:data-task-id="${task.id}"
                          th:data-parent-task-id="${task.parentTaskId}"
                          th:data-column-id="${col.id}"
-                         th:attr="data-label-id=${task.primaryLabel != null ? task.primaryLabel.id : ''},data-completed=${task.completed}"
+                         th:attr="data-label-id=${task.primaryLabel != null ? task.primaryLabel.id : ''},data-completed=${task.completed},data-done-stale=${staleDoneTaskIds.contains(task.id) ? 'true' : null}"
                          th:style="${task.accentColor != null} ? |border-left: 4px solid ${task.accentColor};| : ''"
                          role="button"
                          tabindex="0">
@@ -187,15 +197,6 @@
                         </button>
                     </div>
 
-                    <div class="quick-add-card" th:data-col-id="${col.id}">
-                        <input type="text"
-                               class="quick-add-input"
-                               th:id="|quick-add-${col.id}|"
-                               th:data-col-id="${col.id}"
-                               placeholder="Nueva tarea"
-                               autocomplete="off"/>
-                        <span class="quick-add-feedback" aria-live="polite"></span>
-                    </div>
                 </div>
             </div>
 
@@ -308,6 +309,13 @@
             <div class="field modal-subtasks-field" id="modalSubtasksField" style="display:none">
                 <label>Subtareas</label>
                 <div class="modal-subtasks-list" id="modalSubtasksList"></div>
+                <div class="modal-adopt-wrap" id="modalAdoptWrap">
+                    <button type="button" class="modal-adopt-toggle" id="modalAdoptToggle">+ Agregar tarea existente</button>
+                    <div class="modal-adopt-picker" id="modalAdoptPicker" style="display:none">
+                        <input type="text" class="modal-adopt-input" id="modalAdoptInput" placeholder="Buscar tarea…" autocomplete="off"/>
+                        <div class="modal-adopt-results" id="modalAdoptResults"></div>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="modal-body modal-body-history" id="modalBodyHistory" style="display:none">
@@ -417,6 +425,6 @@
     };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script th:src="@{/js/board.js(v='20260605c')}"></script>
+<script th:src="@{/js/board.js(v='20260609i')}"></script>
 </body>
 </html>

@@ -11,8 +11,10 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -50,12 +52,32 @@ class BoardControllerTest extends BaseControllerTest {
     @Test
     void board_returnsViewWithColumns() throws Exception {
         when(boardService.findAllColumns()).thenReturn(List.of(col));
+        when(boardService.findStaleDoneTaskIds(anyList(), any(Instant.class))).thenReturn(Set.of());
         when(labelService.findAll()).thenReturn(List.of());
 
         mockMvc.perform(get("/board").with(authenticatedUser()))
             .andExpect(status().isOk())
             .andExpect(view().name("board"))
-            .andExpect(model().attributeExists("columns", "labels"));
+            .andExpect(model().attributeExists("columns", "labels", "staleDoneTaskIds"));
+    }
+
+    @Test
+    void board_withStaleTasks_passesStaleDoneTaskIdsToModel() throws Exception {
+        // Data
+        BoardColumn doneCol = new BoardColumn();
+        doneCol.setId(2L);
+        doneCol.setName("Hecho");
+        doneCol.setDone(true);
+
+        // Mock methods
+        when(boardService.findAllColumns()).thenReturn(List.of(col, doneCol));
+        when(boardService.findStaleDoneTaskIds(anyList(), any(Instant.class))).thenReturn(Set.of(42L));
+        when(labelService.findAll()).thenReturn(List.of());
+
+        // Invoke method + Asserts
+        mockMvc.perform(get("/board").with(authenticatedUser()))
+            .andExpect(status().isOk())
+            .andExpect(model().attribute("staleDoneTaskIds", Set.of(42L)));
     }
 
     @Test

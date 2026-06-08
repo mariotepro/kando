@@ -22,8 +22,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * MVC controller exposing the board page and its JSON endpoints.
@@ -32,8 +35,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class BoardController {
 
-    private static final String SORT_DIRECTION_ASC  = "asc";
-    private static final String SORT_DIRECTION_DESC = "desc";
+    private static final String SORT_DIRECTION_ASC    = "asc";
+    private static final String SORT_DIRECTION_DESC   = "desc";
+    private static final int    STALE_DONE_THRESHOLD_DAYS = 7;
 
     private final BoardService boardService;
     private final LabelService labelService;
@@ -49,7 +53,10 @@ public class BoardController {
     @GetMapping("/board")
     public String board(Model model, Authentication authentication) {
         List<BoardColumn> columns = boardService.findAllColumns();
+        Instant staleCutoff = Instant.now().minus(STALE_DONE_THRESHOLD_DAYS, ChronoUnit.DAYS);
+        Set<Long> staleDoneTaskIds = boardService.findStaleDoneTaskIds(columns, staleCutoff);
         model.addAttribute("columns", columns);
+        model.addAttribute("staleDoneTaskIds", staleDoneTaskIds);
         model.addAttribute("labels", labelService.findAll());
         String username = authentication != null ? authentication.getName() : "?";
         model.addAttribute("userProfile", userService.getProfileOrFallback(username));
