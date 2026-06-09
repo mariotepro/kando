@@ -37,21 +37,38 @@ jobs:
             echo "is_snapshot=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Bump main to release version
+      - name: Configure Git
         if: steps.current.outputs.is_snapshot == 'true'
         run: |
-          RELEASE=${CURRENT_VERSION%-SNAPSHOT}
-          mvn versions:set -DnewVersion="$RELEASE" -DgenerateBackupPoms=false
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Prepare main release version
+        if: steps.current.outputs.is_snapshot == 'true'
+        id: release
+        run: |
+          RELEASE=${CURRENT_VERSION%-SNAPSHOT}
+          echo "version=$RELEASE" >> $GITHUB_OUTPUT
+          mvn versions:set -DnewVersion="$RELEASE" -DgenerateBackupPoms=false
+        env:
+          CURRENT_VERSION: ${{ steps.current.outputs.version }}
+
+      - name: Build release version before publishing bump
+        if: steps.current.outputs.is_snapshot == 'true'
+        run: mvn -B verify --no-transfer-progress
+
+      - name: Publish main release bump
+        if: steps.current.outputs.is_snapshot == 'true'
+        run: |
           git add pom.xml
           git commit -m "chore: release $RELEASE [version-bump]"
           git push origin main
         env:
-          CURRENT_VERSION: ${{ steps.current.outputs.version }}
+          RELEASE: ${{ steps.release.outputs.version }}
 
-      - name: Bump develop to next SNAPSHOT
+      - name: Prepare develop next SNAPSHOT
         if: steps.current.outputs.is_snapshot == 'true'
+        id: next
         run: |
           RELEASE=${CURRENT_VERSION%-SNAPSHOT}
           MAJOR=$(echo "$RELEASE" | cut -d. -f1)
@@ -59,11 +76,27 @@ jobs:
           PATCH=$(echo "$RELEASE" | cut -d. -f3)
           PATCH=${PATCH:-0}
           NEXT_VERSION="$MAJOR.$MINOR.$((PATCH + 1))-SNAPSHOT"
+          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          git fetch origin develop
           git checkout develop
-          git pull origin develop
+          git pull --ff-only origin develop
           mvn versions:set -DnewVersion="$NEXT_VERSION" -DgenerateBackupPoms=false
+        env:
+          CURRENT_VERSION: ${{ steps.current.outputs.version }}
+
+      - name: Build develop next SNAPSHOT before publishing bump
+        if: steps.current.outputs.is_snapshot == 'true'
+        run: mvn -B verify --no-transfer-progress
+
+      - name: Publish develop version bump
+        if: steps.current.outputs.is_snapshot == 'true'
+        run: |
+          if git diff --quiet -- pom.xml; then
+            echo "Develop is already at $NEXT_VERSION; nothing to commit."
+            exit 0
+          fi
           git add pom.xml
           git commit -m "chore: bump develop to $NEXT_VERSION [version-bump]"
           git push origin develop
         env:
-          CURRENT_VERSION: ${{ steps.current.outputs.version }}
+          NEXT_VERSION: ${{ steps.next.outputs.version }}
