@@ -2,10 +2,10 @@ package com.kando.config;
 
 import com.kando.service.SetupService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.info.BuildProperties;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -18,18 +18,17 @@ public class AppStartupRunner implements ApplicationRunner {
     private static final String DEFAULT_VERSION = "dev";
 
     private final SetupService setupService;
-    @Nullable
     private final BuildProperties buildProperties;
 
     /**
      * Creates the startup runner with the services required during bootstrap.
      *
      * @param setupService service that validates and prepares the database state
-     * @param buildProperties build metadata generated during packaging, if available
+     * @param buildPropertiesProvider provider for build metadata generated during packaging, if available
      */
-    public AppStartupRunner(SetupService setupService, @Nullable BuildProperties buildProperties) {
+    public AppStartupRunner(SetupService setupService, ObjectProvider<BuildProperties> buildPropertiesProvider) {
         this.setupService = setupService;
-        this.buildProperties = buildProperties;
+        this.buildProperties = buildPropertiesProvider.getIfAvailable();
     }
 
     /**

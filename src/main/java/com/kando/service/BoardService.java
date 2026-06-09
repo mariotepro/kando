@@ -579,10 +579,6 @@ public class BoardService {
         return parentTask;
     }
 
-    private int nextPositionInColumn(Long columnId) {
-        return taskRepository.findByColumnIdOrderByPositionAsc(columnId).size();
-    }
-
     private String resolveLabelSortKey(Task task) {
         return Optional.ofNullable(task.getPrimaryLabel())
             .map(Label::getName)
