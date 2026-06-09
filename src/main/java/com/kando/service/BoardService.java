@@ -18,7 +18,9 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -175,14 +177,20 @@ public class BoardService {
         Label quickLabel = resolveRequiredQuickLabel(title, labelId);
         log.debug("Creating quick task in column {} with resolved label {}", columnId, quickLabel.getId());
 
+        List<Task> existingTasks = loadOrderedTasks(columnId);
+
         Task task = new Task();
         task.setTitle(normalizedTitle);
         task.setColumn(column);
-        task.setPosition(nextPositionInColumn(columnId));
+        task.setPosition(0);
         task.setLabels(toLabelSet(quickLabel));
 
         Task saved = taskRepository.save(task);
         recordTaskCreated(saved, column);
+
+        existingTasks.add(0, saved);
+        reindexTasks(existingTasks);
+
         return saved;
     }
 
@@ -593,6 +601,60 @@ public class BoardService {
 
     private void recordTaskCreated(Task task, BoardColumn column) {
         columnHistoryService.recordCreation(task, column);
+    }
+
+    /**
+     * Returns the identifiers of tasks — and their direct subtasks — that have been sitting in a
+     * done column since before {@code staleCutoff}.
+     *
+     * <p>Only root tasks are queried against the history table; subtasks inherit the stale state
+     * from their parent because the history service only records column transitions for parent tasks.
+     *
+     * @param columns board columns as returned by {@link #findAllColumns()}
+     * @param staleCutoff tasks whose last done-column transition happened before this instant are stale
+     * @return unmodifiable set of stale task identifiers; empty when nothing is stale
+     */
+    public Set<Long> findStaleDoneTaskIds(List<BoardColumn> columns, Instant staleCutoff) {
+        List<Long> rootTaskIds = columns.stream()
+            .filter(BoardColumn::isDone)
+            .flatMap(col -> col.getTasks().stream())
+            .filter(task -> task.getParentTask() == null)
+            .map(Task::getId)
+            .filter(Objects::nonNull)
+            .toList();
+
+        if (rootTaskIds.isEmpty()) {
+            log.debug("No root tasks in done columns – skipping stale detection");
+            return Collections.emptySet();
+        }
+
+        Set<Long> staleRootIds = new HashSet<>();
+        for (Object[] row : historyRepository.findLatestDoneInstantsByTaskIds(rootTaskIds)) {
+            if (row[1] instanceof Instant movedAt && movedAt.isBefore(staleCutoff)) {
+                staleRootIds.add((Long) row[0]);
+            }
+        }
+
+        if (staleRootIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        Set<Long> staleIds = new HashSet<>(staleRootIds);
+        for (BoardColumn col : columns) {
+            if (!col.isDone()) {
+                continue;
+            }
+            for (Task task : col.getTasks()) {
+                Long taskId = task.getId();
+                if (taskId != null && task.getParentTask() != null
+                        && staleRootIds.contains(task.getParentTaskId())) {
+                    staleIds.add(taskId);
+                }
+            }
+        }
+
+        log.debug("Found {} stale tasks in done columns (cutoff: {})", staleIds.size(), staleCutoff);
+        return Collections.unmodifiableSet(staleIds);
     }
 
     public List<Map<String, String>> findTaskHistory(Long taskId) {
