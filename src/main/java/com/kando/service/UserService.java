@@ -37,6 +37,17 @@ public class UserService implements UserDetailsService {
         return userRepository.save(user);
     }
 
+    /**
+     * Loads the authenticated user, failing loudly if the account somehow no longer exists.
+     *
+     * @param username authenticated username
+     * @return persisted user
+     */
+    public KandoUser getUserOrThrow(String username) {
+        return userRepository.findByUsername(username)
+            .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado"));
+    }
+
     public KandoUser getProfileOrFallback(String username) {
         return userRepository.findByUsername(username).orElseGet(() -> {
             KandoUser fallback = new KandoUser();

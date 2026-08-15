@@ -18,25 +18,25 @@
             }
         }());
     </script>
-    <link rel="stylesheet" th:href="@{/css/main.css(v='20260605c')}"/>
+    <link rel="stylesheet" th:href="@{/css/main.css(v='20260609ai')}"/>
 </head>
 <body class="app-body">
 
 <nav class="navbar">
     <div class="navbar-brand">
-        <a th:href="@{/board}" style="text-decoration:none;display:flex;align-items:center;gap:.5rem">
+        <a th:href="@{/board(boardId=${activeBoard.id})}" style="text-decoration:none;display:flex;align-items:center;gap:.5rem">
             <span class="logo-icon">◈</span>
             <span class="logo-text">kando</span>
         </a>
     </div>
     <div class="navbar-actions">
-        <a th:href="@{/board}" class="btn btn-ghost btn-sm">← Tablero</a>
+        <a th:href="@{/board(boardId=${activeBoard.id})}" class="btn btn-ghost btn-sm">← Tablero</a>
     </div>
 </nav>
 
 <div class="page-content">
     <div class="page-header">
-        <h1>Etiquetas</h1>
+        <h1>Etiquetas — <span th:text="${activeBoard.name}">Tablero</span></h1>
     </div>
 
     <div class="labels-grid" id="labelsList">
@@ -82,6 +82,48 @@
     </p>
 </div>
 
+<!-- ── Confirm modal (reemplaza confirm()) ─────────────────────────────────── -->
+<div class="modal-overlay" id="confirmModal" style="display:none" onclick="cancelConfirmModalOutside(event)">
+    <div class="modal modal-confirm" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow">Confirmación</p>
+                <h2 id="confirmModalTitle">Confirmar</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="cancelConfirmModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-confirm-copy" id="confirmModalCopy"></p>
+        </div>
+        <div class="modal-footer modal-confirm-footer">
+            <button class="btn btn-ghost btn-sm" type="button" onclick="cancelConfirmModal()">Cancelar</button>
+            <button class="btn btn-danger btn-sm" id="confirmModalButton" type="button" onclick="confirmConfirmModal()">Eliminar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Generic alert modal (reemplaza alert()) ─────────────────────────────── -->
+<div class="modal-overlay" id="alertModal" style="display:none" onclick="closeAlertModalOutside(event)">
+    <div class="modal modal-confirm" role="dialog" aria-modal="true" aria-labelledby="alertModalTitle">
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow">Aviso</p>
+                <h2 id="alertModalTitle">Aviso</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="closeAlertModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-confirm-copy" id="alertModalCopy"></p>
+        </div>
+        <div class="modal-footer modal-confirm-footer">
+            <button class="btn btn-primary btn-sm" id="alertModalButton" type="button" onclick="closeAlertModal()">Aceptar</button>
+        </div>
+    </div>
+</div>
+
+<script th:inline="javascript">
+    window.KANDO = { activeBoardId: /*[[${activeBoard.id}]]*/ null };
+</script>
 <script th:src="@{/js/labels.js}"></script>
 </body>
 </html>

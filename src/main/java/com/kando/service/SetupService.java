@@ -36,6 +36,18 @@ public class SetupService {
         log.info("Flyway migrations completed.");
     }
 
+    /**
+     * Realigns the Flyway schema history checksums with the migration files on disk.
+     *
+     * <p>Needed when an already-applied migration file was edited afterward (checksum mismatch).
+     * Does not re-run any migration or change the database schema.
+     */
+    public void repairSchemaHistory() {
+        log.info("Repairing Flyway schema history...");
+        buildFlyway().repair();
+        log.info("Flyway schema history repaired.");
+    }
+
     public boolean isDatabaseEmpty() {
         try {
             Flyway flyway = buildFlyway();

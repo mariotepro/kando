@@ -1,6 +1,9 @@
 package com.kando.controller;
 
+import com.kando.model.Board;
+import com.kando.model.KandoUser;
 import com.kando.model.Label;
+import com.kando.service.BoardService;
 import com.kando.service.LabelService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +15,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -21,8 +27,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class LabelControllerTest extends BaseControllerTest {
 
     @MockitoBean LabelService labelService;
+    @MockitoBean BoardService boardService;
 
     private Label urgente;
+    private Board board;
+    private KandoUser mockUser;
 
     @BeforeEach
     void setUp() {
@@ -30,11 +39,24 @@ class LabelControllerTest extends BaseControllerTest {
         urgente.setId(1L);
         urgente.setName("urgente");
         urgente.setColor("#ef4444");
+
+        mockUser = new KandoUser();
+        mockUser.setId(1L);
+        mockUser.setUsername("mario");
+        when(userService.getUserOrThrow(anyString())).thenReturn(mockUser);
+
+        board = new Board();
+        board.setId(1L);
+        board.setName("Mi tablero");
+        board.setOwner(mockUser);
+        when(boardService.resolveActiveBoard(any(), any())).thenReturn(board);
+        when(boardService.requireOwnedBoard(eq(1L), any())).thenReturn(board);
+        when(boardService.listBoards(1L)).thenReturn(List.of(board));
     }
 
     @Test
     void labelsPage_returnsViewWithLabels() throws Exception {
-        when(labelService.findAll()).thenReturn(List.of(urgente));
+        when(labelService.findAll(1L)).thenReturn(List.of(urgente));
 
         mockMvc.perform(get("/labels").with(authenticatedUser()))
             .andExpect(status().isOk())
@@ -44,11 +66,11 @@ class LabelControllerTest extends BaseControllerTest {
 
     @Test
     void createLabel_returnsCreatedLabel() throws Exception {
-        when(labelService.create("urgente", "#ef4444")).thenReturn(urgente);
+        when(labelService.create(board, "urgente", "#ef4444")).thenReturn(urgente);
 
         mockMvc.perform(post("/api/labels").with(authenticatedUser()).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("name", "urgente", "color", "#ef4444"))))
+                .content(objectMapper.writeValueAsString(Map.of("name", "urgente", "color", "#ef4444", "boardId", 1))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(1))
             .andExpect(jsonPath("$.name").value("urgente"))
@@ -58,7 +80,7 @@ class LabelControllerTest extends BaseControllerTest {
     @Test
     void updateLabel_returnsUpdatedLabel() throws Exception {
         urgente.setColor("#ff0000");
-        when(labelService.update(1L, "urgente", "#ff0000")).thenReturn(urgente);
+        when(labelService.update(1L, mockUser, "urgente", "#ff0000")).thenReturn(urgente);
 
         mockMvc.perform(put("/api/labels/1").with(authenticatedUser()).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -69,7 +91,7 @@ class LabelControllerTest extends BaseControllerTest {
 
     @Test
     void deleteLabel_returnsNoContent() throws Exception {
-        doNothing().when(labelService).delete(1L);
+        doNothing().when(labelService).delete(1L, mockUser);
 
         mockMvc.perform(delete("/api/labels/1").with(authenticatedUser()).with(csrf()))
             .andExpect(status().isNoContent());
@@ -77,18 +99,20 @@ class LabelControllerTest extends BaseControllerTest {
 
     @Test
     void suggestLabel_found_returnsLabel() throws Exception {
-        when(labelService.findClosest("urgentee")).thenReturn(Optional.of(urgente));
+        when(labelService.findClosest(1L, "urgentee")).thenReturn(Optional.of(urgente));
 
-        mockMvc.perform(get("/api/labels/suggest").with(authenticatedUser()).param("q", "urgentee"))
+        mockMvc.perform(get("/api/labels/suggest").with(authenticatedUser())
+                .param("q", "urgentee").param("boardId", "1"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.name").value("urgente"));
     }
 
     @Test
     void suggestLabel_notFound_returns404() throws Exception {
-        when(labelService.findClosest("xyz")).thenReturn(Optional.empty());
+        when(labelService.findClosest(1L, "xyz")).thenReturn(Optional.empty());
 
-        mockMvc.perform(get("/api/labels/suggest").with(authenticatedUser()).param("q", "xyz"))
+        mockMvc.perform(get("/api/labels/suggest").with(authenticatedUser())
+                .param("q", "xyz").param("boardId", "1"))
             .andExpect(status().isNotFound());
     }
 }

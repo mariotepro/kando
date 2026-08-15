@@ -18,6 +18,13 @@ public class BoardColumn {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // Nullable: columns created before multi-board support exist without a board until
+    // BoardService adopts them into a user's first board (see resolveActiveBoard).
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "board_id")
+    private Board board;
+
     @Column(nullable = false, length = 128)
     private String name;
 

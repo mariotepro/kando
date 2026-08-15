@@ -1,10 +1,14 @@
 package com.kando;
 
+import com.kando.model.Board;
 import com.kando.model.BoardColumn;
+import com.kando.model.KandoUser;
 import com.kando.model.Label;
 import com.kando.model.Task;
 import com.kando.model.TaskColumnHistory;
 import com.kando.repository.BoardColumnRepository;
+import com.kando.repository.BoardRepository;
+import com.kando.repository.KandoUserRepository;
 import com.kando.repository.LabelRepository;
 import com.kando.repository.TaskColumnHistoryRepository;
 import com.kando.repository.TaskRepository;
@@ -39,10 +43,13 @@ class BoardHistoryIntegrationTest {
 
     @Autowired BoardService boardService;
     @Autowired BoardColumnRepository columnRepository;
+    @Autowired BoardRepository boardRepository;
+    @Autowired KandoUserRepository userRepository;
     @Autowired LabelRepository labelRepository;
     @Autowired TaskRepository taskRepository;
     @Autowired TaskColumnHistoryRepository historyRepository;
 
+    private KandoUser owner;
     private BoardColumn colHoy;
     private BoardColumn colHecho;
     private Label labelUrgente;
@@ -53,19 +60,34 @@ class BoardHistoryIntegrationTest {
         taskRepository.deleteAll();
         labelRepository.deleteAll();
         columnRepository.deleteAll();
+        boardRepository.deleteAll();
+        userRepository.deleteAll();
+
+        owner = new KandoUser();
+        owner.setUsername("mario");
+        owner.setPassword("hash");
+        owner = userRepository.save(owner);
+
+        Board board = new Board();
+        board.setName("Mi tablero");
+        board.setOwner(owner);
+        board = boardRepository.save(board);
 
         colHoy = new BoardColumn();
+        colHoy.setBoard(board);
         colHoy.setName("Hoy");
         colHoy.setPosition(0);
         colHoy = columnRepository.save(colHoy);
 
         colHecho = new BoardColumn();
+        colHecho.setBoard(board);
         colHecho.setName("Hecho");
         colHecho.setDone(true);
         colHecho.setPosition(1);
         colHecho = columnRepository.save(colHecho);
 
         labelUrgente = new Label();
+        labelUrgente.setBoard(board);
         labelUrgente.setName("urgente");
         labelUrgente.setColor("#ef4444");
         labelUrgente = labelRepository.save(labelUrgente);
@@ -73,7 +95,7 @@ class BoardHistoryIntegrationTest {
 
     @Test
     void createQuick_recordsInitialColumnHistory() {
-        Task task = boardService.createQuick("Mi primera tarea", colHoy.getId(), labelUrgente.getId());
+        Task task = boardService.createQuick("Mi primera tarea", colHoy.getId(), labelUrgente.getId(), owner);
 
         List<TaskColumnHistory> history = historyRepository.findByTaskIdOrderByMovedAtAsc(task.getId());
 
@@ -88,9 +110,9 @@ class BoardHistoryIntegrationTest {
 
     @Test
     void moveTask_recordsHistoryAndCompletionDate() {
-        Task task = boardService.createQuick("Mover a hecho", colHoy.getId(), labelUrgente.getId());
+        Task task = boardService.createQuick("Mover a hecho", colHoy.getId(), labelUrgente.getId(), owner);
 
-        boardService.moveTask(task.getId(), colHecho.getId(), 0, null);
+        boardService.moveTask(task.getId(), colHecho.getId(), 0, null, owner);
 
         List<TaskColumnHistory> history = historyRepository.findByTaskIdOrderByMovedAtAsc(task.getId());
         Instant completionDate = boardService.findCompletionDate(task.getId()).orElse(null);

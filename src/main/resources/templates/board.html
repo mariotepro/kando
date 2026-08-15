@@ -3,7 +3,7 @@
       xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 <head>
     <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
     <title>Kando</title>
     <link rel="icon" type="image/svg+xml" th:href="@{/favicon.svg}"/>
     <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -19,7 +19,7 @@
             }
         }());
     </script>
-    <link rel="stylesheet" th:href="@{/css/main.css(v='20260609i')}"/>
+    <link rel="stylesheet" th:href="@{/css/main.css(v='20260609al')}"/>
 </head>
 <body class="app-body">
 
@@ -30,7 +30,21 @@
             <span class="logo-icon">◈</span>
             <span class="logo-text">kando</span>
         </div>
-        <div class="board-filters">
+        <button class="board-mobile-filter-toggle" id="boardMobileFilterToggle" type="button" aria-expanded="false" aria-controls="boardMobileFilters">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="4" y1="21" x2="4" y2="14"></line>
+                <line x1="4" y1="10" x2="4" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12" y2="3"></line>
+                <line x1="20" y1="21" x2="20" y2="16"></line>
+                <line x1="20" y1="12" x2="20" y2="3"></line>
+                <line x1="1" y1="14" x2="7" y2="14"></line>
+                <line x1="9" y1="8" x2="15" y2="8"></line>
+                <line x1="17" y1="16" x2="23" y2="16"></line>
+            </svg>
+            <span>Filtros</span>
+        </button>
+        <div class="board-filters" id="boardMobileFilters">
             <label class="board-search" for="boardSearchInput">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="11" cy="11" r="7"></circle>
@@ -56,6 +70,43 @@
         </div>
     </div>
     <div class="navbar-actions">
+        <div class="board-menu-wrap" id="boardMenuWrap">
+            <button class="btn btn-ghost btn-sm board-switcher-btn" id="boardSwitcherBtn" type="button" aria-haspopup="true" aria-expanded="false">
+                <span class="board-switcher-name" id="boardSwitcherName" th:text="${activeBoard.name}">Tablero</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </button>
+            <div class="board-switcher-dropdown" id="boardSwitcherDropdown" style="display:none">
+                <div class="board-switcher-list">
+                    <div th:each="b : ${boards}" class="board-switcher-item"
+                         th:classappend="${b.id == activeBoard.id} ? ' is-active' : ''"
+                         th:attr="data-board-id=${b.id}">
+                        <a th:href="@{/board(boardId=${b.id})}" class="board-switcher-item-link" th:text="${b.name}">Tablero</a>
+                        <button class="btn btn-icon board-switcher-rename" type="button"
+                                th:attr="data-board-id=${b.id}" title="Renombrar tablero">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                        </button>
+                        <button class="btn btn-icon danger board-switcher-delete" type="button"
+                                th:if="${#lists.size(boards) > 1}"
+                                th:attr="data-board-id=${b.id}" title="Eliminar tablero">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 6h18"/>
+                                <path d="M8 6V4h8v2"/>
+                                <path d="M19 6l-1.5 14a2 2 0 0 1-2 1.5H8.5a2 2 0 0 1-2-1.5L5 6"/>
+                                <path d="M10 11v5M14 11v5"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="board-switcher-divider"></div>
+                <button class="board-switcher-new" type="button" onclick="createBoard()">+ Nuevo tablero</button>
+            </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="btnResetColumnWidths" style="display:none" onclick="resetColumnWidths()">Restablecer anchos</button>
         <button class="btn btn-ghost btn-sm" id="btnEditModeDone" style="display:none" onclick="toggleEditMode()">✓ Listo</button>
         <button class="btn btn-primary btn-sm" id="btnCreateTask">+ Crear</button>
         <div class="profile-menu-wrap" id="profileMenuWrap">
@@ -80,7 +131,7 @@
                 <div class="profile-dropdown-divider"></div>
                 <button class="profile-dropdown-item" type="button" onclick="openProfileModal(); closeProfileDropdown()">Editar perfil</button>
                 <button class="profile-dropdown-item" type="button" onclick="openLabelsModal(); closeProfileDropdown()">Etiquetas</button>
-                <a th:href="@{/export/md}" class="profile-dropdown-item">Exportar MD</a>
+                <a th:href="@{/export/md(boardId=${activeBoard.id})}" class="profile-dropdown-item">Exportar MD</a>
                 <button class="profile-dropdown-item" type="button" id="btnEditMode" onclick="toggleEditMode(); closeProfileDropdown()">Editar columnas</button>
                 <div class="profile-dropdown-divider"></div>
                 <button class="profile-dropdown-item" type="button" onclick="openVersionModal(); closeProfileDropdown()">Acerca de</button>
@@ -198,12 +249,19 @@
                     </div>
 
                 </div>
+                <div class="column-resize-handle" aria-hidden="true"></div>
             </div>
 
             <div class="add-column-btn" id="addColumnBtn" style="display:none">
                 <button class="btn btn-ghost" onclick="addColumn()">+ Columna</button>
             </div>
         </div>
+    </div>
+    <div class="board-mobile-edge-indicator board-mobile-edge-indicator-left" aria-hidden="true">
+        <span>‹</span>
+    </div>
+    <div class="board-mobile-edge-indicator board-mobile-edge-indicator-right" aria-hidden="true">
+        <span>›</span>
     </div>
 </main>
 
@@ -309,8 +367,12 @@
             <div class="field modal-subtasks-field" id="modalSubtasksField" style="display:none">
                 <label>Subtareas</label>
                 <div class="modal-subtasks-list" id="modalSubtasksList"></div>
+                <div class="modal-subtask-add-row">
+                    <input type="text" class="modal-subtask-add-input" id="modalSubtaskAddInput" placeholder="Nueva subtarea" autocomplete="off"/>
+                </div>
+                <span class="modal-subtask-add-feedback" id="modalSubtaskAddFeedback" aria-live="polite"></span>
                 <div class="modal-adopt-wrap" id="modalAdoptWrap">
-                    <button type="button" class="modal-adopt-toggle" id="modalAdoptToggle">+ Agregar tarea existente</button>
+                    <button type="button" class="modal-adopt-toggle modal-adopt-toggle-secondary" id="modalAdoptToggle">o agrega una tarea existente</button>
                     <div class="modal-adopt-picker" id="modalAdoptPicker" style="display:none">
                         <input type="text" class="modal-adopt-input" id="modalAdoptInput" placeholder="Buscar tarea…" autocomplete="off"/>
                         <div class="modal-adopt-results" id="modalAdoptResults"></div>
@@ -326,6 +388,90 @@
             <div style="flex:1"></div>
             <button class="btn btn-ghost btn-sm" type="button" onclick="closeModal()">Cancelar</button>
             <button class="btn btn-primary btn-sm" type="button" onclick="saveTask()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Delete task modal ───────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="deleteTaskModal" style="display:none" onclick="closeDeleteTaskModalOutside(event)">
+    <div class="modal modal-confirm" role="dialog" aria-modal="true" aria-labelledby="deleteTaskModalTitle">
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow">Confirmación</p>
+                <h2 id="deleteTaskModalTitle">Eliminar tarea</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="closeDeleteTaskModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-confirm-copy">Esta acción eliminará la tarea del tablero. No se puede deshacer.</p>
+        </div>
+        <div class="modal-footer modal-confirm-footer">
+            <button class="btn btn-ghost btn-sm" type="button" onclick="closeDeleteTaskModal()">Cancelar</button>
+            <button class="btn btn-danger btn-sm" id="deleteTaskConfirmButton" type="button" onclick="confirmDeleteTask()">Eliminar tarea</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Generic confirm modal (acciones destructivas: tablero, columna, etiqueta) ── -->
+<div class="modal-overlay" id="confirmModal" style="display:none" onclick="cancelConfirmModalOutside(event)">
+    <div class="modal modal-confirm" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow">Confirmación</p>
+                <h2 id="confirmModalTitle">Confirmar</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="cancelConfirmModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-confirm-copy" id="confirmModalCopy"></p>
+        </div>
+        <div class="modal-footer modal-confirm-footer">
+            <button class="btn btn-ghost btn-sm" type="button" onclick="cancelConfirmModal()">Cancelar</button>
+            <button class="btn btn-danger btn-sm" id="confirmModalButton" type="button" onclick="confirmConfirmModal()">Eliminar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Create label modal (etiqueta del quick-add sin coincidencia clara) ────── -->
+<div class="modal-overlay" id="createLabelModal" style="display:none" onclick="cancelCreateLabelModalOutside(event)">
+    <div class="modal modal-confirm" role="dialog" aria-modal="true" aria-labelledby="createLabelModalTitle">
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow">Nueva etiqueta</p>
+                <h2 id="createLabelModalTitle">Crear etiqueta</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="cancelCreateLabelModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-confirm-copy" id="createLabelModalCopy"></p>
+            <div class="label-row">
+                <button class="label-color-btn" type="button" id="createLabelColorBtn"
+                        data-color="#cba6f7" style="background:#cba6f7" title="Elegir color"></button>
+                <input type="text" class="label-name-input" id="createLabelNameInput" maxlength="64" autocomplete="off"/>
+            </div>
+        </div>
+        <div class="modal-footer modal-confirm-footer">
+            <button class="btn btn-ghost btn-sm" type="button" onclick="cancelCreateLabelModal()">Cancelar</button>
+            <button class="btn btn-primary btn-sm" id="createLabelModalButton" type="button" onclick="confirmCreateLabelModal()">Crear etiqueta</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Generic alert modal (avisos de error) ───────────────────────────────── -->
+<div class="modal-overlay" id="alertModal" style="display:none" onclick="closeAlertModalOutside(event)">
+    <div class="modal modal-confirm" role="dialog" aria-modal="true" aria-labelledby="alertModalTitle">
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow">Aviso</p>
+                <h2 id="alertModalTitle">Aviso</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="closeAlertModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-confirm-copy" id="alertModalCopy"></p>
+        </div>
+        <div class="modal-footer modal-confirm-footer">
+            <button class="btn btn-primary btn-sm" id="alertModalButton" type="button" onclick="closeAlertModal()">Aceptar</button>
         </div>
     </div>
 </div>
@@ -414,6 +560,7 @@
 <script th:inline="javascript">
     window.KANDO = {
         labels: /*[[${labels}]]*/ [],
+        activeBoardId: /*[[${activeBoard.id}]]*/ null,
         csrfToken: /*[[${_csrf != null ? _csrf.token : ''}]]*/ '',
         user: {
             username:    /*[[${userProfile.username}]]*/ '',
@@ -425,6 +572,6 @@
     };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script th:src="@{/js/board.js(v='20260609i')}"></script>
+<script th:src="@{/js/board.js(v='20260609al')}"></script>
 </body>
 </html>

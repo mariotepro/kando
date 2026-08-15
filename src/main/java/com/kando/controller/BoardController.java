@@ -2,7 +2,9 @@ package com.kando.controller;
 
 import com.kando.dto.MoveRequest;
 import com.kando.dto.TaskRequest;
+import com.kando.model.Board;
 import com.kando.model.BoardColumn;
+import com.kando.model.KandoUser;
 import com.kando.model.Task;
 import com.kando.service.BoardService;
 import com.kando.service.LabelService;
@@ -30,6 +32,10 @@ import java.util.Set;
 
 /**
  * MVC controller exposing the board page and its JSON endpoints.
+ *
+ * <p>Every endpoint resolves the authenticated {@link KandoUser} and passes it into
+ * {@link BoardService}, which verifies ownership of whatever board/column/task/label is
+ * being touched before doing anything else.
  */
 @Controller
 @RequiredArgsConstructor
@@ -48,19 +54,73 @@ public class BoardController {
      *
      * @param model page model
      * @param authentication current user
+     * @param boardId board requested via the board switcher, defaults to the user's first board
      * @return board template name
      */
     @GetMapping("/board")
-    public String board(Model model, Authentication authentication) {
-        List<BoardColumn> columns = boardService.findAllColumns();
+    public String board(Model model, Authentication authentication,
+                        @RequestParam(required = false) Long boardId) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        Board activeBoard = boardService.resolveActiveBoard(user, boardId);
+        List<BoardColumn> columns = boardService.findAllColumns(activeBoard.getId());
         Instant staleCutoff = Instant.now().minus(STALE_DONE_THRESHOLD_DAYS, ChronoUnit.DAYS);
         Set<Long> staleDoneTaskIds = boardService.findStaleDoneTaskIds(columns, staleCutoff);
         model.addAttribute("columns", columns);
         model.addAttribute("staleDoneTaskIds", staleDoneTaskIds);
-        model.addAttribute("labels", labelService.findAll());
-        String username = authentication != null ? authentication.getName() : "?";
-        model.addAttribute("userProfile", userService.getProfileOrFallback(username));
+        model.addAttribute("labels", labelService.findAll(activeBoard.getId()));
+        model.addAttribute("boards", boardService.listBoards(user.getId()));
+        model.addAttribute("activeBoard", activeBoard);
+        model.addAttribute("userProfile", userService.getProfileOrFallback(user.getUsername()));
         return "board";
+    }
+
+    // ── Board REST endpoints ─────────────────────────────────────────────────
+
+    /**
+     * Creates a new board for the authenticated user.
+     *
+     * @param body request body with the board name
+     * @param authentication current user
+     * @return created board
+     */
+    @PostMapping("/api/boards")
+    @ResponseBody
+    public ResponseEntity<Board> createBoard(@RequestBody Map<String, String> body,
+                                             Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        return ResponseEntity.ok(boardService.createBoard(user, body.get("name")));
+    }
+
+    /**
+     * Renames a board owned by the authenticated user.
+     *
+     * @param id board identifier
+     * @param body request body with the new board name
+     * @param authentication current user
+     * @return updated board
+     */
+    @PutMapping("/api/boards/{id}")
+    @ResponseBody
+    public ResponseEntity<Board> renameBoard(@PathVariable Long id,
+                                             @RequestBody Map<String, String> body,
+                                             Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        return ResponseEntity.ok(boardService.renameBoard(id, user, body.get("name")));
+    }
+
+    /**
+     * Deletes a board owned by the authenticated user, with its columns and tasks.
+     *
+     * @param id board identifier
+     * @param authentication current user
+     * @return empty response
+     */
+    @DeleteMapping("/api/boards/{id}")
+    @ResponseBody
+    public ResponseEntity<Void> deleteBoard(@PathVariable Long id, Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        boardService.deleteBoard(id, user);
+        return ResponseEntity.noContent().build();
     }
 
     // ── Column REST endpoints ─────────────────────────────────────────────────
@@ -68,13 +128,17 @@ public class BoardController {
     /**
      * Creates a new board column.
      *
-     * @param body request body with the column name
+     * @param body request body with the column name and owning board
+     * @param authentication current user
      * @return created column
      */
     @PostMapping("/api/columns")
     @ResponseBody
-    public ResponseEntity<BoardColumn> createColumn(@RequestBody Map<String, String> body) {
-        return ResponseEntity.ok(boardService.createColumn(body.get("name")));
+    public ResponseEntity<BoardColumn> createColumn(@RequestBody Map<String, Object> body,
+                                                     Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        Long boardId = Long.parseLong(body.get("boardId").toString());
+        return ResponseEntity.ok(boardService.createColumn((String) body.get("name"), boardId, user));
     }
 
     /**
@@ -82,25 +146,30 @@ public class BoardController {
      *
      * @param id column identifier
      * @param body request body with the new column name
+     * @param authentication current user
      * @return updated column
      */
     @PutMapping("/api/columns/{id}")
     @ResponseBody
     public ResponseEntity<BoardColumn> renameColumn(@PathVariable Long id,
-                                                    @RequestBody Map<String, String> body) {
-        return ResponseEntity.ok(boardService.renameColumn(id, body.get("name")));
+                                                    @RequestBody Map<String, String> body,
+                                                    Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        return ResponseEntity.ok(boardService.renameColumn(id, user, body.get("name")));
     }
 
     /**
      * Deletes a column together with its tasks.
      *
      * @param id column identifier
+     * @param authentication current user
      * @return empty response
      */
     @DeleteMapping("/api/columns/{id}")
     @ResponseBody
-    public ResponseEntity<Void> deleteColumn(@PathVariable Long id) {
-        boardService.deleteColumn(id);
+    public ResponseEntity<Void> deleteColumn(@PathVariable Long id, Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        boardService.deleteColumn(id, user);
         return ResponseEntity.noContent().build();
     }
 
@@ -108,12 +177,14 @@ public class BoardController {
      * Persists the current column order.
      *
      * @param orderedIds ordered column identifiers
+     * @param authentication current user
      * @return empty response
      */
     @PostMapping("/api/columns/reorder")
     @ResponseBody
-    public ResponseEntity<Void> reorderColumns(@RequestBody List<Long> orderedIds) {
-        boardService.reorderColumns(orderedIds);
+    public ResponseEntity<Void> reorderColumns(@RequestBody List<Long> orderedIds, Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        boardService.reorderColumns(orderedIds, user);
         return ResponseEntity.ok().build();
     }
 
@@ -122,12 +193,14 @@ public class BoardController {
      *
      * @param id column identifier
      * @param direction sort direction requested by the board
+     * @param authentication current user
      * @return empty response
      */
     @PostMapping("/api/columns/{id}/sort-by-label")
     @ResponseBody
     public ResponseEntity<Void> sortColumnByLabel(@PathVariable Long id,
-                                                  @RequestParam(defaultValue = SORT_DIRECTION_ASC) String direction) {
+                                                  @RequestParam(defaultValue = SORT_DIRECTION_ASC) String direction,
+                                                  Authentication authentication) {
         boolean descending;
         if (SORT_DIRECTION_ASC.equalsIgnoreCase(direction)) {
             descending = false;
@@ -137,7 +210,8 @@ public class BoardController {
             throw new IllegalArgumentException("Unsupported sort direction: " + direction);
         }
 
-        boardService.sortColumnByLabel(id, descending);
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        boardService.sortColumnByLabel(id, descending, user);
         return ResponseEntity.ok().build();
     }
 
@@ -147,39 +221,45 @@ public class BoardController {
      * Creates a lightweight task from the board quick-add input.
      *
      * @param body request body with title and column
+     * @param authentication current user
      * @return created task
      */
     @PostMapping("/api/tasks/quick")
     @ResponseBody
-    public ResponseEntity<Task> createQuick(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<Task> createQuick(@RequestBody Map<String, Object> body, Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
         String title = (String) body.get("title");
         Long columnId = Long.parseLong(body.get("columnId").toString());
         Long labelId = body.get("labelId") == null ? null : Long.parseLong(body.get("labelId").toString());
-        return ResponseEntity.ok(boardService.createQuick(title, columnId, labelId));
+        return ResponseEntity.ok(boardService.createQuick(title, columnId, labelId, user));
     }
 
     /**
      * Loads the task details shown in the modal.
      *
      * @param id task identifier
+     * @param authentication current user
      * @return task details
      */
     @GetMapping("/api/tasks/{id}")
     @ResponseBody
-    public ResponseEntity<Task> getTask(@PathVariable Long id) {
-        return ResponseEntity.ok(boardService.findTask(id));
+    public ResponseEntity<Task> getTask(@PathVariable Long id, Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        return ResponseEntity.ok(boardService.findTask(id, user));
     }
 
     /**
      * Returns the column-transition history for a task.
      *
      * @param id task identifier
+     * @param authentication current user
      * @return ordered list of column transitions
      */
     @GetMapping("/api/tasks/{id}/history")
     @ResponseBody
-    public ResponseEntity<List<Map<String, String>>> getTaskHistory(@PathVariable Long id) {
-        return ResponseEntity.ok(boardService.findTaskHistory(id));
+    public ResponseEntity<List<Map<String, String>>> getTaskHistory(@PathVariable Long id, Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        return ResponseEntity.ok(boardService.findTaskHistory(id, user));
     }
 
     /**
@@ -187,14 +267,17 @@ public class BoardController {
      *
      * @param id task identifier
      * @param req validated task payload
+     * @param authentication current user
      * @return updated task
      */
     @PutMapping("/api/tasks/{id}")
     @ResponseBody
     public ResponseEntity<Task> updateTask(@PathVariable Long id,
-                                           @Valid @RequestBody TaskRequest req) {
+                                           @Valid @RequestBody TaskRequest req,
+                                           Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
         return ResponseEntity.ok(boardService.updateTask(id, req.getTitle(), req.getNotes(),
-            req.getDueDate(), req.getLabelId(), req.getColumnId(), req.getParentTaskId()));
+            req.getDueDate(), req.getLabelId(), req.getColumnId(), req.getParentTaskId(), user));
     }
 
     /**
@@ -202,13 +285,16 @@ public class BoardController {
      *
      * @param id task identifier
      * @param req move payload
+     * @param authentication current user
      * @return empty response
      */
     @PostMapping("/api/tasks/{id}/move")
     @ResponseBody
     public ResponseEntity<Void> moveTask(@PathVariable Long id,
-                                         @RequestBody MoveRequest req) {
-        boardService.moveTask(id, req.getTargetColumnId(), req.getNewPosition(), req.getParentTaskId());
+                                         @RequestBody MoveRequest req,
+                                         Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        boardService.moveTask(id, req.getTargetColumnId(), req.getNewPosition(), req.getParentTaskId(), user);
         return ResponseEntity.ok().build();
     }
 
@@ -217,29 +303,34 @@ public class BoardController {
      *
      * @param id task identifier
      * @param body request body with the completion flag
+     * @param authentication current user
      * @return updated task
      */
     @PutMapping("/api/tasks/{id}/completion")
     @ResponseBody
     public ResponseEntity<Task> updateTaskCompletion(@PathVariable Long id,
-                                                     @RequestBody Map<String, Boolean> body) {
+                                                     @RequestBody Map<String, Boolean> body,
+                                                     Authentication authentication) {
         Boolean completed = body.get("completed");
         if (completed == null) {
             throw new IllegalArgumentException("Completion state is required");
         }
-        return ResponseEntity.ok(boardService.updateTaskCompletion(id, completed));
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        return ResponseEntity.ok(boardService.updateTaskCompletion(id, completed, user));
     }
 
     /**
      * Deletes the selected task.
      *
      * @param id task identifier
+     * @param authentication current user
      * @return empty response
      */
     @DeleteMapping("/api/tasks/{id}")
     @ResponseBody
-    public ResponseEntity<Void> deleteTask(@PathVariable Long id) {
-        boardService.deleteTask(id);
+    public ResponseEntity<Void> deleteTask(@PathVariable Long id, Authentication authentication) {
+        KandoUser user = userService.getUserOrThrow(authentication.getName());
+        boardService.deleteTask(id, user);
         return ResponseEntity.noContent().build();
     }
 }

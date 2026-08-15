@@ -33,6 +33,17 @@
     <div th:if="${success}" class="alert alert-success" th:text="${success}"></div>
     <div th:if="${error}"   class="alert alert-error"   th:text="${error}"></div>
 
+    <!-- Recovery: an already-applied migration file was edited after being applied -->
+    <div th:if="${error != null and #strings.contains(error, 'checksum')}" class="setup-section">
+        <p class="setup-desc">
+            Esto pasa cuando el fichero de una migración ya aplicada cambió después. Si el cambio es
+            seguro (mismo resultado, distinta forma de escribirlo), repara el histórico y vuelve a aplicar.
+        </p>
+        <form th:action="@{/setup/repair}" method="post">
+            <button type="submit" class="btn btn-ghost btn-full">Reparar histórico de migraciones</button>
+        </form>
+    </div>
+
     <!-- Pending migrations -->
     <div th:if="${not #lists.isEmpty(pendingMigrations)}" class="setup-section">
         <p class="setup-desc">
