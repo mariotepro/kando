@@ -32,12 +32,13 @@ public class ExportService {
     private final BoardService boardService;
 
     /**
-     * Builds a Markdown document with every column, task and subtask.
+     * Builds a Markdown document with every column, task and subtask of a single board.
      *
+     * @param boardId board to export
      * @return Markdown representation of the board
      */
-    public String exportAsMarkdown() {
-        List<BoardColumn> columns = columnRepository.findAllByOrderByPositionAsc();
+    public String exportAsMarkdown(Long boardId) {
+        List<BoardColumn> columns = columnRepository.findByBoardIdOrderByPositionAsc(boardId);
         log.debug("Exporting board to markdown with {} columns", columns.size());
         StringBuilder markdown = new StringBuilder("# Kando Board\n\n");
 

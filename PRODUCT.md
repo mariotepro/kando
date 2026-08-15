@@ -8,7 +8,7 @@
 
 ## Qué es Kando
 
-Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero es para acceso propio). Está pensada como herramienta de productividad personal, no colaborativa.
+Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero es para acceso propio). Está pensada como herramienta de productividad personal, no colaborativa. Cada usuario puede tener varios tableros (p.ej. "Trabajo", "Casa") y cambiar entre ellos desde el selector de la navbar.
 
 ---
 
@@ -31,11 +31,26 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 
 ## Características implementadas
 
+### Múltiples tableros
+
+- Cada usuario puede crear tantos tableros como quiera; cada uno tiene su propio conjunto de columnas y tareas
+- **Selector en la navbar** (arriba a la derecha): botón con el nombre del tablero activo; al abrirlo lista todos los tableros del usuario y resalta el activo
+- **Crear tablero**: opción "+ Nuevo tablero" al final del selector, abre el modal genérico de texto (el mismo que renombrar columna) para pedir el nombre y navega al tablero recién creado **directamente en modo "Editar columnas"** (vía `?editColumns=1`, que se limpia de la URL nada más consumirse) para poder ajustar las 4 columnas de serie antes de nada; se sale con el botón "✓ Listo" de siempre
+- **Renombrar tablero**: icono de lápiz que aparece al pasar el ratón sobre cada fila del selector (hover-reveal, mismo lenguaje visual que renombrar columna); abre el mismo modal genérico precargado con el nombre actual
+- Cambiar de tablero navega a `/board?boardId=X` (enlace normal, sin JavaScript de por medio); sin parámetro se muestra el primer tablero del usuario
+- **Tableros nuevos vienen con las 4 columnas de serie**: Planificado, Hoy, En espera, Hecho (esta última marcada `done = true`, igual que en el tablero clásico). Se pueden renombrar, borrar o añadir más con el botón "+ Columna" ya existente
+- **Las etiquetas son por tablero** (no globales): el tablero de trabajo y el personal tienen cada uno su propio conjunto, y pueden repetir nombre entre sí (`urgente` en ambos, por ejemplo) sin chocar. El perfil de usuario sigue siendo global
+- **Borrar tablero**: icono de papelera junto al de renombrar en el selector (hover-reveal), pide confirmación con el modal propio de Kando (no diálogo nativo) y elimina el tablero con todas sus columnas y tareas. Si borras el tablero activo, vuelves a `/board` sin parámetro (se resuelve al siguiente tablero). **No se puede borrar si es el único tablero** del usuario — el icono ni siquiera aparece, y el backend lo rechaza igualmente por si acaso
+- La migración que introdujo tableros (`V7__boards.sql`) crea un tablero por defecto ("Mi tablero") para cada usuario existente y adopta en él las columnas creadas antes de que existiera el concepto de tablero, la primera vez que ese usuario visita `/board` tras la actualización. Si no hay columnas que adoptar (usuario genuinamente nuevo), ese tablero por defecto también recibe las 4 columnas de serie. `V8`/`V9` hicieron lo mismo para las etiquetas (antes globales, ahora por tablero)
+- **Aislamiento entre usuarios**: cada endpoint de tablero/columna/tarea/etiqueta verifica en el backend que el recurso pertenece a un tablero del usuario autenticado antes de leerlo o tocarlo — no solo la vista `/board`. Un usuario no puede ver, editar ni borrar nada de otro adivinando un id (columna, tarea o etiqueta), ni mover una tarea a una columna ajena, ni asignarle una etiqueta de otro tablero. Los mensajes de error son genéricos ("no encontrado") para no confirmar si el recurso existe
+
 ### Tablero Kanban
 
 - **Columnas configurables**: se pueden crear, renombrar, eliminar y reordenar (drag & drop)
 - Columnas iniciales por defecto: Hoy, Planificado, En espera, Hecho
 - Modo "Editar columnas" separado del modo normal para proteger la edición accidental
+- **Ancho de columna ajustable**: en modo edición aparece un asa en el borde derecho de cada columna; arrastrando con el ratón se redimensiona (mínimo 220px, máximo 640px). El ancho se guarda por columna en `localStorage` (no es dato de servidor, es preferencia visual local, igual que los colores de etiqueta personalizados)
+- Botón global **"Restablecer anchos"** en la navbar (solo visible en modo edición, junto a "✓ Listo") que borra los anchos guardados y devuelve todas las columnas a su ancho por defecto
 
 ### Tareas
 
@@ -53,7 +68,7 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
   - En tareas raíz, el modal muestra todas las subtareas como checklist visual compacto dentro de la pestaña de detalles
   - Las tarjetas del board ajustan su altura al título; la distancia entre título y etiqueta se mantiene constante
 - **Botón eliminar en tarjeta**: icono de papelera (top-right de la tarjeta), aparece al hover, pide confirmación
-- **Exportación a Markdown**: `/export/md` genera un `.md` descargable con todas las tareas agrupadas
+- **Exportación a Markdown**: `/export/md?boardId=X` genera un `.md` descargable con las tareas del tablero indicado (el activo, si no se pasa `boardId`) agrupadas por columna. El nombre del fichero es `kando-<nombre del tablero>.md` (caracteres no válidos en nombre de fichero se eliminan)
 
 ### Subtareas
 
@@ -65,6 +80,7 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - Si se elimina el padre, las subtareas suben a nivel raíz
 - **Botón + en tarjeta padre**: icono "+" en la esquina inferior derecha de las tarjetas raíz. Abre una subfila inline justo debajo del bloque del padre; no usa modal
 - **Checklist de completado**: cada subtarea tiene un check en el board y otro en el modal de su tarea padre; ambos comparten el mismo estado persistido
+- **Crear subtarea desde el modal**: la pestaña de detalles de una tarea raíz muestra siempre un cajetín "Nueva subtarea" (no un mensaje de "sin subtareas"); Enter la crea heredando la etiqueta de la tarea padre igual que el botón `+` de la tarjeta. "Agregar tarea existente" queda como enlace secundario, más pequeño, debajo del cajetín
 - Drag & drop para anidar: **modelo de indentación horizontal** (estilo Notion/outliner). El eje vertical reordena como siempre; para convertir una tarea en subtarea se **empuja el cursor a la derecha** mientras se arrastra. Si la tarjeta ya es subtarea, se puede **empujar a la izquierda** para devolverla a nivel raíz. Al cruzar el umbral, la tarjeta arrastrada muestra una pista visual (`↳` al entrar como hija, `↰` al salir a raíz) y la tarjeta de arriba (su futuro padre) se resalta en verde. Soltar fuera del umbral = reordenar normal. Umbral con histéresis (entra a 32px, sale a 16px) para que no parpadee
 
 ### Drag & Drop
@@ -79,6 +95,7 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - Arrastrar columnas en modo edición
 - Implementado con SortableJS
 - En dispositivos táctiles, el drag usa una pulsación breve antes de iniciar el arrastre para evitar conflictos con el scroll normal
+- SortableJS con `forceFallback: true` en ambas instancias (tareas y columnas): fuerza el drag simulado por JS (con las clases `sortable-ghost`/`sortable-chosen` ya con estilo propio) en vez del drag-and-drop nativo del navegador, que en Chrome/escritorio dejaba ver su rectángulo azul de arrastre por defecto, ajeno al tema de Kando
 
 ### Ordenación por etiqueta
 
@@ -88,14 +105,17 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - La ordenación se persiste en backend
 - Ordena por nombre de etiqueta y, a igualdad, por título
 - Los bloques padre + subtareas se mantienen juntos durante la ordenación
+- **El botón solo se ve "encendido" (highlighted) mientras el orden siga reflejando esa ordenación**: en cuanto se arrastra una tarjeta (reordenar, anidar, mover entre columnas), se añade una tarea nueva por quick-add, o se guarda una tarea con cambios que podrían romper el orden alfabético, el indicador vuelve a su estado apagado para esa columna (`clearColumnSortState`, estado guardado en `localStorage` por columna)
 
 ### Etiquetas
 
 - Página de gestión: `/labels`
+- **Por tablero**: cada tablero tiene su propio conjunto de etiquetas, independiente del resto
 - Cada etiqueta tiene nombre y color
 - Si cambia la etiqueta de una tarea padre, la nueva etiqueta se propaga automáticamente a todas sus subtareas directas
 - **Edición inline**: el nombre es directamente editable, se guarda al perder foco o pulsar Enter
 - **Color inline**: selector de color junto al nombre con 20 colores predefinidos (paleta Catppuccin Mocha) + botón "+" para colores personalizados
+- **Creación al vuelo desde quick-add**: si el `#etiqueta` escrito no coincide exactamente ni por poco (distancia Levenshtein ≤ 2) con ninguna etiqueta existente del tablero, en vez de un error se abre un modal para crearla ahí mismo (nombre precargado con el texto escrito + selector de color); al confirmar, se crea la etiqueta y se reintenta la creación de la tarea con ella. El backend distingue este caso devolviendo `404` en vez de `400` para que el cliente sepa cuándo ofrecer el modal
   - Los colores personalizados se guardan en `localStorage` y son eliminables desde el propio selector
 - **Nueva etiqueta**: fila compacta al final de la lista, Enter para crear
 - **Eliminar**: icono de papelera al final de cada fila (aparece al hover), pide confirmación
@@ -201,6 +221,7 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 
 - `/setup`: página que ejecuta las migraciones de Flyway pendientes
 - Se muestra automáticamente si la BD está vacía o hay migraciones nuevas
+- **Reparar histórico**: si un fichero de migración ya aplicada cambió después (checksum mismatch — nunca debería pasar, pero puede ocurrir), aparece un botón "Reparar histórico de migraciones" que realinea el checksum guardado con el fichero actual, sin re-ejecutar ni tocar el esquema
 
 ---
 
@@ -220,12 +241,15 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 | Pickers compactos tipo Jira | Evita listas desplegadas permanentes y reduce ruido visual en el modal |
 | Toggle `A-Z` / `Z-A` por columna | Hace explícito el sentido de ordenación y evita clicks “a ciegas” |
 | Fonts: Inter + DM Sans | Inter es el estándar de UI, DM Sans da carácter en headings |
+| Ancho de columna en `localStorage`, no en servidor | Es preferencia visual del dispositivo, no dato del tablero; evita migración de BD para algo cosmético |
 
 ---
 
 ## Estado actual del código
 
 ### Backend (Java 25 / Spring Boot 4.0.6)
+- `Board`: entidad de tablero (nombre, `owner`, posición); `BoardColumn` ahora pertenece a un `Board` vía `board_id`
+- `BoardService`: además de lo de siempre, `resolveActiveBoard` (resuelve o crea el tablero activo y adopta columnas huérfanas pre-multi-tablero), `listBoards`, `createBoard`, `renameBoard`
 - `BoardService`: lógica de tablero, tareas, subtareas, drag-and-drop, filtros visibles soportados por el DOM, ordenación por etiqueta asc/desc, cascada de etiqueta padre-hijas, completado de subtareas e historial de columnas
 - `ColumnHistoryService`: persistencia y lectura del historial de columnas por tarea
 - `LabelService`: CRUD de etiquetas con fuzzy matching (Levenshtein)
@@ -237,8 +261,8 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - Validaciones: título requerido, etiqueta requerida al crear, sin sub-subtareas, etiqueta compartida padre-hijo, una sola etiqueta activa por tarea
 
 ### Frontend
-- `board.html` + `board.js`: tablero principal con quick add, filtros combinados (título + etiqueta), pickers compactos, subtareas inline, checklist de completado de subtareas, drag-and-drop e historial visual de creación/movimientos; modal "Acerca de" con versión y build; modal de input propio (sin `prompt()` nativo)
-- `labels.html` + `labels.js`: gestión de etiquetas, rediseñada con edición inline y creación compacta
+- `board.html` + `board.js`: tablero principal con quick add, filtros combinados (título + etiqueta), pickers compactos, subtareas inline, checklist de completado de subtareas, drag-and-drop e historial visual de creación/movimientos; modal "Acerca de" con versión y build; modal de input propio (sin `prompt()` nativo), modal de confirmación propio (sin `confirm()` nativo, `showConfirmModal(title, message)`) y modal de aviso propio (sin `alert()` nativo, `showAlertModal(message, title)`) — usados en todas las confirmaciones/avisos del tablero. Regla del proyecto: nunca `confirm()`/`alert()`/`prompt()` nativos, ver CLAUDE.md
+- `labels.html` + `labels.js`: gestión de etiquetas, rediseñada con edición inline y creación compacta; incluye su propia copia mínima de `showConfirmModal`/`showAlertModal` (página standalone, no comparte JS con `board.js`) para no depender de diálogos nativos
 - `main.css`: única hoja de estilos; sección "Board refresh" (a partir de línea ~511) contiene la paleta activa Catppuccin Mocha
 - `favicon.svg`: favicon SVG con el logo `◈` en color primario
 

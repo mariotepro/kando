@@ -1,12 +1,13 @@
 package com.kando.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "label")
+@Table(name = "label", uniqueConstraints = @UniqueConstraint(columnNames = {"board_id", "name"}))
 @Getter @Setter @NoArgsConstructor
 public class Label {
 
@@ -14,7 +15,14 @@ public class Label {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 64)
+    // Nullable: labels created before per-board support are adopted lazily,
+    // same as BoardColumn.board (see BoardService.resolveActiveBoard).
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "board_id")
+    private Board board;
+
+    @Column(nullable = false, length = 64)
     private String name;
 
     @Column(nullable = false, length = 7)

@@ -57,6 +57,26 @@ class SetupControllerTest extends BaseControllerTest {
     }
 
     @Test
+    void repairMigrations_success_redirectsWithFlash() throws Exception {
+        doNothing().when(setupService).repairSchemaHistory();
+
+        mockMvc.perform(post("/setup/repair").with(csrf()))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/setup"))
+            .andExpect(flash().attributeExists("success"));
+    }
+
+    @Test
+    void repairMigrations_failure_redirectsWithError() throws Exception {
+        doThrow(new RuntimeException("DB error")).when(setupService).repairSchemaHistory();
+
+        mockMvc.perform(post("/setup/repair").with(csrf()))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/setup"))
+            .andExpect(flash().attributeExists("error"));
+    }
+
+    @Test
     void createAdmin_success_redirectsToLogin() throws Exception {
         when(userService.createUser("admin", "pass")).thenReturn(null);
 

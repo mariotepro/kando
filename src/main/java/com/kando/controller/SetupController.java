@@ -34,6 +34,17 @@ public class SetupController {
         return "redirect:/setup";
     }
 
+    @PostMapping("/repair")
+    public String repairMigrations(RedirectAttributes ra) {
+        try {
+            setupService.repairSchemaHistory();
+            ra.addFlashAttribute("success", "Histórico de migraciones reparado. Vuelve a intentar aplicar los cambios.");
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", "Error al reparar: " + e.getMessage());
+        }
+        return "redirect:/setup";
+    }
+
     @PostMapping("/admin")
     public String createAdmin(@RequestParam String username,
                               @RequestParam String password,

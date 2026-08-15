@@ -44,6 +44,7 @@ resources/       Copias de referencia de los SQL de migración
 - Respuestas JSON directas desde controllers con `@ResponseBody`.
 - Plantillas Thymeleaf con Sec extras (`xmlns:sec`).
 - Sin comentarios obvios; solo los que explican decisiones no evidentes.
+- **Nunca usar diálogos nativos del navegador** (`confirm()`, `alert()`, `prompt()`). Toda confirmación, entrada de texto o aviso usa un modal propio de Kando con el mismo estilo del resto de la app. Para confirmar una acción destructiva, usa `showConfirmModal(title, message)` (board.js) — no añadas otro `confirm()`. Para pedir un nombre/texto corto, usa `showInputModal(title, defaultValue)`, ya existente.
 
 ## Migraciones de BD
 Cada cambio de esquema → nuevo archivo `VN__descripcion.sql` en `src/main/resources/db/migration/`.

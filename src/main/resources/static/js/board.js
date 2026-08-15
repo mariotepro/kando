@@ -10,6 +10,7 @@ let columnSortable = null;
 let dragState = null;
 let dragPointerHandler = null;
 let mobileTaskSwipeState = null;
+let columnResizeState = null;
 let boardTaskDragUnlockTimer = null;
 let boardHorizontalSettleTimer = null;
 let suppressTaskClickUntil = 0;
@@ -40,6 +41,9 @@ const MOBILE_BOARD_SETTLE_LOCK_MS = 260;
 const MOBILE_TASK_DRAG_UNLOCK_DELAY_MS = 240;
 const MOBILE_TASK_SWIPE_X = 30;
 const MOBILE_TASK_SWIPE_AXIS_BIAS = 1.3;
+const COLUMN_WIDTH_MIN = 220;
+const COLUMN_WIDTH_MAX = 640;
+const COLUMN_WIDTH_STORAGE_KEY = 'kando_column_widths';
 const SORT_DIRECTION_NONE = 'none';
 const SORT_DIRECTION_ASC = 'asc';
 const SORT_DIRECTION_DESC = 'desc';
@@ -67,7 +71,10 @@ document.addEventListener('DOMContentLoaded', () => {
   bindMobileFilterToggle();
   bindMobileColumnScrollGate();
   bindProfileDropdown();
+  bindBoardSwitcher();
   bindThemeToggle();
+  applyStoredColumnWidths();
+  document.querySelectorAll('.column-resize-handle').forEach(bindColumnResizeHandle);
   const restoredBoardScroll = restoreBoardScroll();
   focusInitialMobileColumn(restoredBoardScroll);
   initStaleDoneCollapse();
@@ -80,7 +87,22 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.quick-add-input').forEach(bindQuickAddInput);
   document.querySelectorAll('.quick-add-card').forEach(bindQuickAddCard);
   bindModalAdoptArea();
+  bindModalSubtaskAddInput();
+  bindCreateLabelColorBtn();
+  openEditColumnsIfRequested();
 });
+
+/* ── Land in edit-columns mode right after creating a board ──────────────── */
+function openEditColumnsIfRequested() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('editColumns') !== '1') {
+    return;
+  }
+  params.delete('editColumns');
+  const cleanQuery = params.toString();
+  history.replaceState(null, '', cleanQuery ? `${location.pathname}?${cleanQuery}` : location.pathname);
+  toggleEditMode();
+}
 
 function currentTheme() {
   return document.documentElement.dataset.theme === THEME_LIGHT ? THEME_LIGHT : THEME_DARK;
@@ -162,6 +184,7 @@ function initTaskSortables() {
       group: 'tasks',
       draggable: '.task-card[data-task-id]',
       animation: 160,
+      forceFallback: true,
       delay: TOUCH_DRAG_DELAY_MS,
       delayOnTouchOnly: true,
       touchStartThreshold: TOUCH_START_THRESHOLD,
@@ -203,10 +226,15 @@ function initTaskSortables() {
         const newPosition = getTaskIndex(evt.item);
         suppressTaskClickUntil = Date.now() + 220;
 
+        const sourceColId = dragState?.sourceColId ?? targetColId;
+
         api('POST', `/api/tasks/${taskId}/move`, {
           targetColumnId: targetColId,
           newPosition,
           parentTaskId
+        }).then(() => {
+          clearColumnSortState(sourceColId);
+          clearColumnSortState(targetColId);
         }).catch(() => location.reload())
           .finally(() => {
             clearTaskDropTargets();
@@ -663,6 +691,8 @@ function toggleEditMode() {
   if (menuBtn) menuBtn.style.display = editMode ? 'none' : '';
   const doneBtn = document.getElementById('btnEditModeDone');
   if (doneBtn) doneBtn.style.display = editMode ? 'inline-flex' : 'none';
+  const resetWidthsBtn = document.getElementById('btnResetColumnWidths');
+  if (resetWidthsBtn) resetWidthsBtn.style.display = editMode ? 'inline-flex' : 'none';
 
   document.querySelectorAll('.column-edit-actions').forEach(el => {
     el.style.display = editMode ? 'flex' : 'none';
@@ -674,6 +704,7 @@ function toggleEditMode() {
   if (editMode) {
     columnSortable = Sortable.create(document.getElementById('board'), {
       animation: 160,
+      forceFallback: true,
       delay: TOUCH_DRAG_DELAY_MS,
       delayOnTouchOnly: true,
       touchStartThreshold: TOUCH_START_THRESHOLD,
@@ -695,6 +726,103 @@ function toggleEditMode() {
     columnSortable.destroy();
     columnSortable = null;
   }
+}
+
+/* ── Column resize (edit mode) ───────────────────────────────────────────── */
+function readColumnWidths() {
+  try {
+    return JSON.parse(localStorage.getItem(COLUMN_WIDTH_STORAGE_KEY)) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function setColumnWidth(column, width) {
+  const clamped = Math.min(COLUMN_WIDTH_MAX, Math.max(COLUMN_WIDTH_MIN, width));
+  column.style.width = `${clamped}px`;
+  column.style.minWidth = `${clamped}px`;
+  return clamped;
+}
+
+function applyStoredColumnWidths() {
+  const widths = readColumnWidths();
+  document.querySelectorAll('.column[data-col-id]').forEach(column => {
+    const stored = widths[column.dataset.colId];
+    if (stored) {
+      setColumnWidth(column, stored);
+    }
+  });
+}
+
+function resetColumnWidths() {
+  try {
+    localStorage.removeItem(COLUMN_WIDTH_STORAGE_KEY);
+  } catch (e) { /* ignore */ }
+
+  document.querySelectorAll('.column[data-col-id]').forEach(column => {
+    column.style.width = '';
+    column.style.minWidth = '';
+  });
+  syncBoardCentering();
+}
+
+function bindColumnResizeHandle(handle) {
+  if (handle.dataset.boundResize === 'true') {
+    return;
+  }
+
+  handle.dataset.boundResize = 'true';
+  handle.addEventListener('pointerdown', event => {
+    if (!editMode || event.button !== 0) {
+      return;
+    }
+
+    const column = handle.closest('.column[data-col-id]');
+    if (!column) {
+      return;
+    }
+
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    columnResizeState = {
+      column,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: column.getBoundingClientRect().width
+    };
+    handle.classList.add('is-resizing');
+    document.body.classList.add('column-resizing');
+  });
+
+  handle.addEventListener('pointermove', event => {
+    if (!columnResizeState || columnResizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const delta = event.clientX - columnResizeState.startX;
+    setColumnWidth(columnResizeState.column, columnResizeState.startWidth + delta);
+  });
+
+  const endResize = event => {
+    if (!columnResizeState || columnResizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const { column } = columnResizeState;
+    try {
+      const widths = readColumnWidths();
+      widths[column.dataset.colId] = Math.round(column.getBoundingClientRect().width);
+      localStorage.setItem(COLUMN_WIDTH_STORAGE_KEY, JSON.stringify(widths));
+    } catch (e) { /* ignore */ }
+
+    handle.classList.remove('is-resizing');
+    document.body.classList.remove('column-resizing');
+    columnResizeState = null;
+    syncBoardCentering();
+  };
+
+  handle.addEventListener('pointerup', endResize);
+  handle.addEventListener('pointercancel', endResize);
 }
 
 function persistColumnOrder() {
@@ -733,15 +861,161 @@ function inputModalOutsideClick(event) {
   if (event.target === document.getElementById('inputModal')) cancelInputModal();
 }
 
+/* ── Generic confirm modal helper ─────────────────────────────────────────── */
+let _confirmModalResolve = null;
+
+function showConfirmModal(title, message, confirmLabel = 'Eliminar') {
+  document.getElementById('confirmModalTitle').textContent = title;
+  document.getElementById('confirmModalCopy').textContent = message;
+  const button = document.getElementById('confirmModalButton');
+  button.textContent = confirmLabel;
+  button.disabled = false;
+  document.getElementById('confirmModal').style.display = 'flex';
+  setTimeout(() => button.focus(), 50);
+  return new Promise(resolve => { _confirmModalResolve = resolve; });
+}
+
+function confirmConfirmModal() {
+  closeConfirmModal(true);
+}
+
+function cancelConfirmModal() {
+  closeConfirmModal(false);
+}
+
+function closeConfirmModal(result) {
+  document.getElementById('confirmModal').style.display = 'none';
+  if (_confirmModalResolve) { _confirmModalResolve(result); _confirmModalResolve = null; }
+}
+
+function cancelConfirmModalOutside(event) {
+  if (event.target === document.getElementById('confirmModal')) cancelConfirmModal();
+}
+
+/* ── Create-label-on-the-fly modal (quick-add hashtag with no close match) ──── */
+let _createLabelModalResolve = null;
+
+function showCreateLabelModal(tagName) {
+  const nameInput = document.getElementById('createLabelNameInput');
+  const colorBtn = document.getElementById('createLabelColorBtn');
+  document.getElementById('createLabelModalCopy').textContent =
+    `No hay ninguna etiqueta parecida a "#${tagName}". ¿Quieres crearla?`;
+  nameInput.value = tagName;
+  colorBtn.dataset.color = DEFAULT_LABEL_COLOR;
+  colorBtn.style.background = DEFAULT_LABEL_COLOR;
+  document.getElementById('createLabelModal').style.display = 'flex';
+  setTimeout(() => { nameInput.focus(); nameInput.select(); }, 50);
+  return new Promise(resolve => { _createLabelModalResolve = resolve; });
+}
+
+function bindCreateLabelColorBtn() {
+  const colorBtn = document.getElementById('createLabelColorBtn');
+  if (!colorBtn) return;
+  colorBtn.addEventListener('click', () => {
+    openBoardColorPicker(colorBtn, color => {
+      colorBtn.style.background = color;
+      colorBtn.dataset.color = color;
+    });
+  });
+}
+
+function confirmCreateLabelModal() {
+  const name = document.getElementById('createLabelNameInput').value.trim();
+  if (!name) {
+    document.getElementById('createLabelNameInput').focus();
+    return;
+  }
+  const color = document.getElementById('createLabelColorBtn').dataset.color || DEFAULT_LABEL_COLOR;
+  closeCreateLabelModal({ name, color });
+}
+
+function cancelCreateLabelModal() {
+  closeCreateLabelModal(null);
+}
+
+function closeCreateLabelModal(result) {
+  closeBoardColorPickers();
+  document.getElementById('createLabelModal').style.display = 'none';
+  if (_createLabelModalResolve) { _createLabelModalResolve(result); _createLabelModalResolve = null; }
+}
+
+function cancelCreateLabelModalOutside(event) {
+  if (event.target === document.getElementById('createLabelModal')) cancelCreateLabelModal();
+}
+
+/**
+ * Prompts to create the label from a quick-add hashtag that had no close match, returning the
+ * new label's id, or null if the user cancelled.
+ */
+function promptCreateMissingLabel(title, boardId) {
+  const match = title.match(QUICK_LABEL_PATTERN);
+  const tagName = match ? match[1] : '';
+  return showCreateLabelModal(tagName).then(result => {
+    if (!result) {
+      return null;
+    }
+    return api('POST', '/api/labels', { name: result.name, color: result.color, boardId })
+      .then(label => {
+        window.KANDO.labels.push(label);
+        return label.id;
+      });
+  });
+}
+
+/* ── Generic alert modal (replaces alert()) ──────────────────────────────── */
+let _alertModalResolve = null;
+
+function showAlertModal(message, title = 'Aviso') {
+  document.getElementById('alertModalTitle').textContent = title;
+  document.getElementById('alertModalCopy').textContent = message;
+  document.getElementById('alertModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('alertModalButton').focus(), 50);
+  return new Promise(resolve => { _alertModalResolve = resolve; });
+}
+
+function closeAlertModal() {
+  document.getElementById('alertModal').style.display = 'none';
+  if (_alertModalResolve) { _alertModalResolve(); _alertModalResolve = null; }
+}
+
+function closeAlertModalOutside(event) {
+  if (event.target === document.getElementById('alertModal')) closeAlertModal();
+}
+
 document.addEventListener('keydown', e => {
   if (document.getElementById('inputModal').style.display !== 'none') {
     if (e.key === 'Enter') confirmInputModal();
     if (e.key === 'Escape') cancelInputModal();
   }
 
+  const alertModal = document.getElementById('alertModal');
+  if (alertModal && alertModal.style.display !== 'none' && (e.key === 'Enter' || e.key === 'Escape')) {
+    closeAlertModal();
+  }
+
+  const confirmModal = document.getElementById('confirmModal');
+  if (confirmModal && confirmModal.style.display !== 'none') {
+    if (e.key === 'Enter') confirmConfirmModal();
+    if (e.key === 'Escape') cancelConfirmModal();
+  }
+
+  const createLabelModal = document.getElementById('createLabelModal');
+  if (createLabelModal && createLabelModal.style.display !== 'none') {
+    if (e.key === 'Enter') confirmCreateLabelModal();
+    if (e.key === 'Escape') cancelCreateLabelModal();
+  }
+
   const deleteTaskModal = document.getElementById('deleteTaskModal');
-  if (deleteTaskModal && deleteTaskModal.style.display !== 'none' && e.key === 'Escape') {
+  const deleteTaskModalOpen = deleteTaskModal && deleteTaskModal.style.display !== 'none';
+  if (deleteTaskModalOpen && e.key === 'Escape') {
     closeDeleteTaskModal();
+  }
+
+  const taskModal = document.getElementById('taskModal');
+  if (taskModal && taskModal.style.display !== 'none' && !deleteTaskModalOpen
+    && e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.id !== 'modalSubtaskAddInput') {
+    e.preventDefault();
+    saveTask();
   }
 });
 
@@ -749,8 +1023,83 @@ document.addEventListener('keydown', e => {
 function addColumn() {
   showInputModal('Nombre de la columna').then(name => {
     if (!name) return;
-    api('POST', '/api/columns', { name }).then(() => location.reload());
+    api('POST', '/api/columns', { name, boardId: window.KANDO.activeBoardId }).then(() => location.reload());
   });
+}
+
+/* ── Board switcher ───────────────────────────────────────────────────────── */
+function bindBoardSwitcher() {
+  const btn = document.getElementById('boardSwitcherBtn');
+  const dropdown = document.getElementById('boardSwitcherDropdown');
+  if (!btn || !dropdown) {
+    return;
+  }
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = dropdown.style.display !== 'none';
+    dropdown.style.display = open ? 'none' : 'block';
+  });
+
+  document.addEventListener('click', e => {
+    if (!document.getElementById('boardMenuWrap')?.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+
+  document.querySelectorAll('.board-switcher-rename').forEach(renameBtn => {
+    renameBtn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const item = renameBtn.closest('.board-switcher-item');
+      const currentName = item.querySelector('.board-switcher-item-link').textContent.trim();
+      renameBoard(parseInt(renameBtn.dataset.boardId, 10), currentName, item);
+    });
+  });
+
+  document.querySelectorAll('.board-switcher-delete').forEach(deleteBtn => {
+    deleteBtn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const item = deleteBtn.closest('.board-switcher-item');
+      deleteBoard(parseInt(deleteBtn.dataset.boardId, 10), item);
+    });
+  });
+}
+
+function createBoard() {
+  showInputModal('Nombre del tablero').then(name => {
+    if (!name) return;
+    api('POST', '/api/boards', { name }).then(board => {
+      location.href = `/board?boardId=${board.id}&editColumns=1`;
+    });
+  });
+}
+
+function renameBoard(id, currentName, item) {
+  showInputModal('Nuevo nombre del tablero', currentName).then(name => {
+    if (!name || name === currentName) return;
+    api('PUT', `/api/boards/${id}`, { name }).then(board => {
+      item.querySelector('.board-switcher-item-link').textContent = board.name;
+      if (item.classList.contains('is-active')) {
+        document.getElementById('boardSwitcherName').textContent = board.name;
+      }
+    });
+  });
+}
+
+function deleteBoard(id, item) {
+  showConfirmModal('Eliminar tablero', '¿Eliminar este tablero y todas sus columnas y tareas? No se puede deshacer.')
+    .then(confirmed => {
+      if (!confirmed) return;
+      api('DELETE', `/api/boards/${id}`).then(() => {
+        if (item.classList.contains('is-active')) {
+          location.href = '/board';
+          return;
+        }
+        item.remove();
+      }).catch(() => location.reload());
+    });
 }
 
 function renameColumn(btn) {
@@ -768,12 +1117,13 @@ function renameColumn(btn) {
 
 function deleteColumn(btn) {
   const colId = btn.dataset.colId;
-  if (!confirm('¿Eliminar esta columna y todas sus tareas?')) {
-    return;
-  }
-  api('DELETE', `/api/columns/${colId}`).then(() => {
-    document.querySelector(`.column[data-col-id="${colId}"]`).remove();
-  });
+  showConfirmModal('Eliminar columna', '¿Eliminar esta columna y todas sus tareas? No se puede deshacer.')
+    .then(confirmed => {
+      if (!confirmed) return;
+      api('DELETE', `/api/columns/${colId}`).then(() => {
+        document.querySelector(`.column[data-col-id="${colId}"]`).remove();
+      });
+    });
 }
 
 function sortColumnByLabel(btn) {
@@ -793,7 +1143,7 @@ function sortColumnByLabel(btn) {
     })
     .catch(async error => {
       btn.disabled = false;
-      alert(await extractApiErrorMessage(error, 'No he podido ordenar la columna por etiqueta.'));
+      showAlertModal(await extractApiErrorMessage(error, 'No he podido ordenar la columna por etiqueta.'));
     });
 }
 
@@ -840,6 +1190,21 @@ function applyColumnSortButtonState(button, direction) {
   button.querySelector('.column-sort-copy').textContent = text;
   button.title = title;
   button.setAttribute('aria-label', title);
+}
+
+/**
+ * Turns off the sorted indicator for a column once something could have broken its order:
+ * a manual drag reorder, a task moved in/out, or a new root task inserted at the top.
+ */
+function clearColumnSortState(columnId) {
+  if (!columnId) {
+    return;
+  }
+  saveColumnSortDirection(columnId, SORT_DIRECTION_NONE);
+  const button = document.querySelector(`.column-sort-btn[data-col-id="${columnId}"]`);
+  if (button) {
+    applyColumnSortButtonState(button, SORT_DIRECTION_NONE);
+  }
 }
 
 /* ── Board filters ────────────────────────────────────────────────────────── */
@@ -1249,14 +1614,30 @@ function quickAddFromInput(input) {
 
   const colId = parseInt(input.dataset.colId, 10);
   clearQuickAddState(input);
-  api('POST', '/api/tasks/quick', { title, columnId: colId })
+  submitQuickAddTask(input, title, colId, null);
+}
+
+function submitQuickAddTask(input, title, colId, labelId) {
+  const body = { title, columnId: colId };
+  if (labelId) {
+    body.labelId = labelId;
+  }
+  api('POST', '/api/tasks/quick', body)
     .then(task => {
       insertNewTaskCard(task, colId);
+      clearColumnSortState(colId);
       input.value = '';
       hideLabelSuggest();
       input.focus();
     })
     .catch(async error => {
+      if (!labelId && error.status === 404) {
+        const newLabelId = await promptCreateMissingLabel(title, window.KANDO.activeBoardId);
+        if (newLabelId) {
+          submitQuickAddTask(input, title, colId, newLabelId);
+          return;
+        }
+      }
       setQuickAddState(input, await extractApiErrorMessage(error, 'No he podido crear la tarea.'));
     });
 }
@@ -1278,7 +1659,7 @@ function insertNewTaskCard(task, colId) {
 
 function buildTaskCardElement(task) {
   const card = document.createElement('div');
-  card.className = 'task-card';
+  card.className = task.parentTaskId ? 'task-card task-card-subtask' : 'task-card';
   card.setAttribute('role', 'button');
   card.setAttribute('tabindex', '0');
   card.dataset.taskId = task.id;
@@ -1354,6 +1735,10 @@ function quickAddSubtaskFromInput(input) {
   }
 
   clearQuickAddState(input);
+  submitQuickAddSubtask(input, title, normalizedTitle, columnId, parentTaskId, labelId);
+}
+
+function submitQuickAddSubtask(input, title, normalizedTitle, columnId, parentTaskId, labelId) {
   api('POST', '/api/tasks/quick', { title, columnId, labelId })
     .then(task => api('PUT', `/api/tasks/${task.id}`, {
       title: normalizedTitle,
@@ -1365,6 +1750,13 @@ function quickAddSubtaskFromInput(input) {
     }))
     .then(() => reloadPreservingScroll())
     .catch(async error => {
+      if (!labelId && error.status === 404) {
+        const newLabelId = await promptCreateMissingLabel(title, window.KANDO.activeBoardId);
+        if (newLabelId) {
+          submitQuickAddSubtask(input, title, normalizedTitle, columnId, parentTaskId, newLabelId);
+          return;
+        }
+      }
       setQuickAddState(input, await extractApiErrorMessage(error, 'No he podido crear la subtarea.'));
     });
 }
@@ -2147,7 +2539,7 @@ function confirmDeleteTask() {
         confirmButton.disabled = false;
         confirmButton.textContent = 'Eliminar tarea';
       }
-      alert(await extractApiErrorMessage(error, 'No he podido eliminar la tarea.'));
+      showAlertModal(await extractApiErrorMessage(error, 'No he podido eliminar la tarea.'));
     });
 }
 
@@ -2747,7 +3139,7 @@ function createLabelFromPicker(name) {
     return;
   }
 
-  api('POST', '/api/labels', { name: labelName, color: DEFAULT_LABEL_COLOR })
+  api('POST', '/api/labels', { name: labelName, color: DEFAULT_LABEL_COLOR, boardId: window.KANDO.activeBoardId })
     .then(label => {
       window.KANDO.labels.push(label);
       setLabelSelection(label.id);
@@ -2755,7 +3147,7 @@ function createLabelFromPicker(name) {
       closeCpicker('labelCpicker');
     })
     .catch(async error => {
-      alert(await extractApiErrorMessage(error, 'No he podido crear la etiqueta.'));
+      showAlertModal(await extractApiErrorMessage(error, 'No he podido crear la etiqueta.'));
     });
 }
 
@@ -2782,9 +3174,12 @@ function saveTask() {
       labelId: currentLabelId,
       columnId: currentTaskColumnId,
       parentTaskId: currentParentTaskId
-    }).then(() => reloadPreservingScroll())
-      .catch(async error => {
-        alert(await extractApiErrorMessage(error, 'No he podido guardar la tarea.'));
+    }).then(() => {
+      clearColumnSortState(modalOriginColumnId);
+      clearColumnSortState(currentTaskColumnId);
+      reloadPreservingScroll();
+    }).catch(async error => {
+        showAlertModal(await extractApiErrorMessage(error, 'No he podido guardar la tarea.'));
       });
     return;
   }
@@ -2798,9 +3193,12 @@ function saveTask() {
       columnId: currentTaskColumnId,
       parentTaskId: currentParentTaskId
     }))
-    .then(() => reloadPreservingScroll())
+    .then(() => {
+      clearColumnSortState(currentTaskColumnId);
+      reloadPreservingScroll();
+    })
     .catch(async error => {
-      alert(await extractApiErrorMessage(error, 'No he podido crear la tarea.'));
+      showAlertModal(await extractApiErrorMessage(error, 'No he podido crear la tarea.'));
     });
 }
 
@@ -2856,7 +3254,7 @@ function updateTaskCompletion(taskId, completed, options = {}) {
     })
     .catch(async error => {
       if (!options.silent) {
-        alert(await extractApiErrorMessage(error, 'No he podido actualizar la subtarea.'));
+        showAlertModal(await extractApiErrorMessage(error, 'No he podido actualizar la subtarea.'));
       }
       throw error;
     });
@@ -2898,6 +3296,7 @@ function renderModalSubtasks(task) {
     field.style.display = 'none';
     list.innerHTML = '';
     resetModalAdoptArea(false);
+    resetModalSubtaskAddRow();
     return;
   }
 
@@ -2905,14 +3304,7 @@ function renderModalSubtasks(task) {
   field.style.display = '';
   list.innerHTML = '';
   resetModalAdoptArea(true);
-
-  if (!subtasks.length) {
-    const empty = document.createElement('p');
-    empty.className = 'modal-subtasks-empty';
-    empty.textContent = 'Sin subtareas todavía.';
-    list.appendChild(empty);
-    return;
-  }
+  resetModalSubtaskAddRow();
 
   subtasks.forEach(card => {
     const item = document.createElement('div');
@@ -2969,6 +3361,105 @@ function applyModalSubtaskToggleVisual(toggle, completed) {
 function findDirectSubtaskCards(taskId) {
   const parentCard = document.querySelector(`.task-card[data-task-id="${taskId}"]`);
   return parentCard ? getDirectSubtaskElements(parentCard) : [];
+}
+
+/* ── Subtask creation from modal ─────────────────────────────────────────────── */
+function bindModalSubtaskAddInput() {
+  const input = document.getElementById('modalSubtaskAddInput');
+  if (!input) {
+    return;
+  }
+
+  input.addEventListener('input', () => setModalSubtaskAddFeedback(''));
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitModalSubtaskAdd(input);
+    }
+  });
+}
+
+function resetModalSubtaskAddRow() {
+  const input = document.getElementById('modalSubtaskAddInput');
+  if (input) {
+    input.value = '';
+  }
+  setModalSubtaskAddFeedback('');
+}
+
+function setModalSubtaskAddFeedback(message) {
+  const feedback = document.getElementById('modalSubtaskAddFeedback');
+  if (feedback) {
+    feedback.textContent = message;
+  }
+}
+
+function submitModalSubtaskAdd(input) {
+  const title = input.value.trim();
+  if (!title || !currentTaskId) {
+    return;
+  }
+
+  const normalizedTitle = normalizeQuickAddTitle(title);
+  if (!normalizedTitle) {
+    setModalSubtaskAddFeedback('Escribe un título para la subtarea.');
+    return;
+  }
+
+  if (!currentLabelId && !QUICK_LABEL_PATTERN.test(title)) {
+    setModalSubtaskAddFeedback('Añade una #etiqueta o crea la subtarea desde una tarea con etiqueta.');
+    return;
+  }
+
+  const parentTaskId = currentTaskId;
+  const columnId = currentTaskColumnId;
+
+  setModalSubtaskAddFeedback('');
+  submitModalSubtask(input, title, normalizedTitle, parentTaskId, columnId, currentLabelId);
+}
+
+function submitModalSubtask(input, title, normalizedTitle, parentTaskId, columnId, labelId) {
+  input.disabled = true;
+  api('POST', '/api/tasks/quick', { title, columnId, labelId })
+    .then(task => api('PUT', `/api/tasks/${task.id}`, {
+      title: normalizedTitle,
+      notes: null,
+      dueDate: null,
+      labelId,
+      columnId,
+      parentTaskId
+    }))
+    .then(updatedTask => {
+      insertNewSubtaskCard(updatedTask, parentTaskId);
+      renderModalSubtasks({ id: parentTaskId });
+      input.value = '';
+      input.focus();
+    })
+    .catch(async error => {
+      if (!labelId && error.status === 404) {
+        const newLabelId = await promptCreateMissingLabel(title, window.KANDO.activeBoardId);
+        if (newLabelId) {
+          submitModalSubtask(input, title, normalizedTitle, parentTaskId, columnId, newLabelId);
+          return;
+        }
+      }
+      setModalSubtaskAddFeedback(await extractApiErrorMessage(error, 'No he podido crear la subtarea.'));
+    })
+    .finally(() => { input.disabled = false; });
+}
+
+function insertNewSubtaskCard(task, parentTaskId) {
+  const parentCard = document.querySelector(`.task-card[data-task-id="${parentTaskId}"]`);
+  const list = parentCard?.closest('.task-list');
+  if (!parentCard || !list) {
+    return;
+  }
+
+  const card = buildTaskCardElement(task);
+  moveCardAfterSubtree(card, parentCard, list);
+  bindTaskCardInteractions();
+  card.classList.add('task-card-new');
+  card.addEventListener('animationend', () => card.classList.remove('task-card-new'), { once: true });
 }
 
 /* ── Subtask adopt / detach from modal ──────────────────────────────────────── */
@@ -3071,7 +3562,7 @@ async function detachSubtaskFromModal(childTaskId) {
     }
     renderModalSubtasks({ id: currentTaskId, parentTaskId: null });
   } catch (err) {
-    alert(await extractApiErrorMessage(err, 'No se pudo desvincular la subtarea.'));
+    showAlertModal(await extractApiErrorMessage(err, 'No se pudo desvincular la subtarea.'));
   }
 }
 
@@ -3096,7 +3587,7 @@ async function adoptTaskAsSubtask(childTaskId) {
     document.getElementById('modalAdoptPicker').style.display = 'none';
     renderModalSubtasks({ id: currentTaskId, parentTaskId: null });
   } catch (err) {
-    alert(await extractApiErrorMessage(err, 'No se pudo vincular la tarea como subtarea.'));
+    showAlertModal(await extractApiErrorMessage(err, 'No se pudo vincular la tarea como subtarea.'));
   }
 }
 
@@ -3337,14 +3828,17 @@ function buildLabelRow(lbl) {
   });
 
   deleteBtn.addEventListener('click', () => {
-    if (!confirm('¿Eliminar esta etiqueta? Se quitará de todas las tareas.')) return;
-    api('DELETE', `/api/labels/${lbl.id}`)
-      .then(() => {
-        window.KANDO.labels = window.KANDO.labels.filter(l => l.id !== lbl.id);
-        row.remove();
-        refreshBoardLabelUi();
-      })
-      .catch(() => alert('Error al eliminar la etiqueta'));
+    showConfirmModal('Eliminar etiqueta', '¿Eliminar esta etiqueta? Se quitará de todas las tareas.')
+      .then(confirmed => {
+        if (!confirmed) return;
+        api('DELETE', `/api/labels/${lbl.id}`)
+          .then(() => {
+            window.KANDO.labels = window.KANDO.labels.filter(l => l.id !== lbl.id);
+            row.remove();
+            refreshBoardLabelUi();
+          })
+          .catch(() => showAlertModal('Error al eliminar la etiqueta'));
+      });
   });
 
   row.append(colorBtn, nameInput, deleteBtn);
@@ -3375,7 +3869,7 @@ function buildNewLabelRow() {
     e.preventDefault();
     const name = nameInput.value.trim();
     if (!name) { nameInput.focus(); return; }
-    api('POST', '/api/labels', { name, color: colorBtn.dataset.color })
+    api('POST', '/api/labels', { name, color: colorBtn.dataset.color, boardId: window.KANDO.activeBoardId })
       .then(newLabel => {
         window.KANDO.labels.push(newLabel);
         row.before(buildLabelRow(newLabel));
@@ -3385,7 +3879,7 @@ function buildNewLabelRow() {
         refreshBoardLabelUi();
         nameInput.focus();
       })
-      .catch(async err => alert(await extractApiErrorMessage(err, 'Error al crear la etiqueta')));
+      .catch(async err => showAlertModal(await extractApiErrorMessage(err, 'Error al crear la etiqueta')));
   });
 
   row.append(colorBtn, nameInput);
@@ -3394,7 +3888,7 @@ function buildNewLabelRow() {
 
 function saveLabelInline(id, name, color) {
   api('PUT', `/api/labels/${id}`, { name, color })
-    .catch(async err => alert(await extractApiErrorMessage(err, 'Error al guardar la etiqueta')));
+    .catch(async err => showAlertModal(await extractApiErrorMessage(err, 'Error al guardar la etiqueta')));
 }
 
 function refreshBoardLabelUi() {
@@ -3543,7 +4037,7 @@ function saveProfile() {
       updateNavbarAvatar(data);
       if (data.usernameChanged) {
         closeProfileModal();
-        alert('Login actualizado. Vuelve a iniciar sesión.');
+        showAlertModal('Login actualizado. Vuelve a iniciar sesión.');
         window.location.href = '/login';
       } else {
         msgEl.textContent = 'Guardado.'; msgEl.className = 'profile-save-msg ok';

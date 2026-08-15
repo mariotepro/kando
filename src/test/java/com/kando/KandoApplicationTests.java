@@ -1,9 +1,11 @@
 package com.kando;
 
 import com.kando.model.BoardColumn;
+import com.kando.model.KandoUser;
 import com.kando.model.Label;
 import com.kando.model.Task;
 import jakarta.servlet.RequestDispatcher;
+import com.kando.repository.KandoUserRepository;
 import com.kando.repository.LabelRepository;
 import com.kando.repository.BoardColumnRepository;
 import com.kando.repository.TaskRepository;
@@ -43,6 +45,8 @@ class KandoApplicationTests {
     @Autowired
     TaskRepository taskRepository;
     @Autowired
+    KandoUserRepository userRepository;
+    @Autowired
     MockMvc mockMvc;
 
     @Test
@@ -54,6 +58,11 @@ class KandoApplicationTests {
 
     @Test
     void boardPageRendersWithoutLazyLoadingErrors() throws Exception {
+        KandoUser mario = new KandoUser();
+        mario.setUsername("mario");
+        mario.setPassword("hash");
+        userRepository.save(mario);
+
         BoardColumn today = boardColumnRepository.findAllByOrderByPositionAsc().getFirst();
 
         Label urgent = new Label();
