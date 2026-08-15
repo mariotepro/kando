@@ -3,7 +3,7 @@
       xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 <head>
     <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
     <title>Kando</title>
     <link rel="icon" type="image/svg+xml" th:href="@{/favicon.svg}"/>
     <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -19,7 +19,7 @@
             }
         }());
     </script>
-    <link rel="stylesheet" th:href="@{/css/main.css(v='20260609i')}"/>
+    <link rel="stylesheet" th:href="@{/css/main.css(v='20260609u')}"/>
 </head>
 <body class="app-body">
 
@@ -30,7 +30,21 @@
             <span class="logo-icon">◈</span>
             <span class="logo-text">kando</span>
         </div>
-        <div class="board-filters">
+        <button class="board-mobile-filter-toggle" id="boardMobileFilterToggle" type="button" aria-expanded="false" aria-controls="boardMobileFilters">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="4" y1="21" x2="4" y2="14"></line>
+                <line x1="4" y1="10" x2="4" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12" y2="3"></line>
+                <line x1="20" y1="21" x2="20" y2="16"></line>
+                <line x1="20" y1="12" x2="20" y2="3"></line>
+                <line x1="1" y1="14" x2="7" y2="14"></line>
+                <line x1="9" y1="8" x2="15" y2="8"></line>
+                <line x1="17" y1="16" x2="23" y2="16"></line>
+            </svg>
+            <span>Filtros</span>
+        </button>
+        <div class="board-filters" id="boardMobileFilters">
             <label class="board-search" for="boardSearchInput">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="11" cy="11" r="7"></circle>
@@ -205,6 +219,12 @@
             </div>
         </div>
     </div>
+    <div class="board-mobile-edge-indicator board-mobile-edge-indicator-left" aria-hidden="true">
+        <span>‹</span>
+    </div>
+    <div class="board-mobile-edge-indicator board-mobile-edge-indicator-right" aria-hidden="true">
+        <span>›</span>
+    </div>
 </main>
 
 <!-- ── Input modal (columnas) ───────────────────────────────────────────────── -->
@@ -330,6 +350,26 @@
     </div>
 </div>
 
+<!-- ── Delete task modal ───────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="deleteTaskModal" style="display:none" onclick="closeDeleteTaskModalOutside(event)">
+    <div class="modal modal-confirm" role="dialog" aria-modal="true" aria-labelledby="deleteTaskModalTitle">
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow">Confirmación</p>
+                <h2 id="deleteTaskModalTitle">Eliminar tarea</h2>
+            </div>
+            <button class="btn btn-icon" type="button" onclick="closeDeleteTaskModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-confirm-copy">Esta acción eliminará la tarea del tablero. No se puede deshacer.</p>
+        </div>
+        <div class="modal-footer modal-confirm-footer">
+            <button class="btn btn-ghost btn-sm" type="button" onclick="closeDeleteTaskModal()">Cancelar</button>
+            <button class="btn btn-danger btn-sm" id="deleteTaskConfirmButton" type="button" onclick="confirmDeleteTask()">Eliminar tarea</button>
+        </div>
+    </div>
+</div>
+
 <!-- ── Labels modal ─────────────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="labelsModal" style="display:none" onclick="closeLabelsModalOutside(event)">
     <div class="modal modal-labels">
@@ -425,6 +465,6 @@
     };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script th:src="@{/js/board.js(v='20260609i')}"></script>
+<script th:src="@{/js/board.js(v='20260609u')}"></script>
 </body>
 </html>

@@ -5,9 +5,13 @@ let currentTaskColumnId = null;
 let modalOriginColumnId = null;
 let currentParentTaskId = null;
 let currentLabelId = null;
+let pendingDeleteTaskId = null;
 let columnSortable = null;
 let dragState = null;
 let dragPointerHandler = null;
+let mobileTaskSwipeState = null;
+let boardTaskDragUnlockTimer = null;
+let boardHorizontalSettleTimer = null;
 let suppressTaskClickUntil = 0;
 const taskSortables = [];
 const QUICK_LABEL_PATTERN = /#([\w\-áéíóúüñÁÉÍÓÚÜÑ]+)/u;
@@ -20,8 +24,22 @@ const PICKER_VIEWPORT_GAP = 12;
 const PICKER_PANEL_OFFSET = 8;
 const PICKER_MIN_WIDTH = 320;
 const PICKER_MAX_WIDTH = 520;
-const NEST_ENTER_X = 32;
-const NEST_EXIT_X = 16;
+const NEST_ENTER_X = 22;
+const NEST_EXIT_X = 10;
+const TOUCH_DRAG_DELAY_MS = 180;
+const TOUCH_START_THRESHOLD = 6;
+const TOUCH_FALLBACK_TOLERANCE = 8;
+const SORTABLE_SCROLL_SENSITIVITY = 48;
+const SORTABLE_SCROLL_SPEED = 12;
+const MOBILE_BOARD_QUERY = '(max-width: 640px)';
+const MOBILE_HEADER_COMPACT_SCROLL_PX = 12;
+const MOBILE_HORIZONTAL_SCROLL_LOCK_PX = 8;
+const MOBILE_VERTICAL_REORDER_PX = 30;
+const MOBILE_VERTICAL_REORDER_AXIS_BIAS = 1.12;
+const MOBILE_BOARD_SETTLE_LOCK_MS = 260;
+const MOBILE_TASK_DRAG_UNLOCK_DELAY_MS = 240;
+const MOBILE_TASK_SWIPE_X = 30;
+const MOBILE_TASK_SWIPE_AXIS_BIAS = 1.3;
 const SORT_DIRECTION_NONE = 'none';
 const SORT_DIRECTION_ASC = 'asc';
 const SORT_DIRECTION_DESC = 'desc';
@@ -46,10 +64,12 @@ document.addEventListener('DOMContentLoaded', () => {
   syncBoardCentering();
   syncSortButtons();
   bindBoardFilters();
+  bindMobileFilterToggle();
+  bindMobileColumnScrollGate();
   bindProfileDropdown();
   bindThemeToggle();
-  animateNewlyAddedTask();
-  restoreBoardScroll();
+  const restoredBoardScroll = restoreBoardScroll();
+  focusInitialMobileColumn(restoredBoardScroll);
   initStaleDoneCollapse();
 
   document.getElementById('btnCreateTask').addEventListener('click', openCreateModal);
@@ -142,21 +162,34 @@ function initTaskSortables() {
       group: 'tasks',
       draggable: '.task-card[data-task-id]',
       animation: 160,
+      delay: TOUCH_DRAG_DELAY_MS,
+      delayOnTouchOnly: true,
+      touchStartThreshold: TOUCH_START_THRESHOLD,
+      fallbackTolerance: TOUCH_FALLBACK_TOLERANCE,
+      fallbackOnBody: true,
+      scroll: true,
+      scrollSensitivity: SORTABLE_SCROLL_SENSITIVITY,
+      scrollSpeed: SORTABLE_SCROLL_SPEED,
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
       handle: '.task-card[data-task-id]',
       filter: '.task-add-subtask, .task-delete-btn, .subtask-complete-btn',
       preventOnFilter: false,
       onStart(evt) {
+        clearMobileTaskSwipeState();
         dragState = buildDragState(evt.item);
-        dragState.startX = resolveStartX(evt, evt.item);
+        const startPoint = resolveStartPoint(evt, evt.item);
+        dragState.startX = startPoint.x;
+        dragState.startY = startPoint.y;
+        setBoardTaskDragLock(window.matchMedia(MOBILE_BOARD_QUERY).matches);
         attachNestTracking(evt.item);
       },
-      onMove() {
-        return true;
+      onMove(evt, originalEvent) {
+        return allowTaskMove(originalEvent);
       },
       onEnd(evt) {
         detachNestTracking(evt.item);
+        setBoardTaskDragLock(false, MOBILE_TASK_DRAG_UNLOCK_DELAY_MS);
         const taskId = parseInt(evt.item.dataset.taskId, 10);
         const targetColId = parseInt(evt.to.dataset.colId, 10);
         const nestParentId = dragState?.pendingParentTaskId ?? null;
@@ -188,12 +221,40 @@ function initTaskSortables() {
 function buildDragState(item) {
   return {
     childElements: getDirectSubtaskElements(item),
+    hasVerticalReorderIntent: false,
     pendingDetach: false,
     pendingParentTaskId: null,
     sourceColId: parseInt(item.closest('.task-list').dataset.colId, 10),
     sourceParentTaskId: item.dataset.parentTaskId ? parseInt(item.dataset.parentTaskId, 10) : null,
     wasSubtask: Boolean(item.dataset.parentTaskId)
   };
+}
+
+function allowTaskMove(originalEvent) {
+  if (!dragState || !window.matchMedia(MOBILE_BOARD_QUERY).matches) {
+    return true;
+  }
+
+  const point = getPointerCoordinates(originalEvent);
+  if (!point) {
+    return true;
+  }
+
+  const deltaX = Math.abs(point.x - dragState.startX);
+  const deltaY = Math.abs(point.y - dragState.startY);
+  const horizontalIntent = deltaX >= NEST_EXIT_X && deltaX > deltaY;
+  if (horizontalIntent || dragState.pendingParentTaskId != null || dragState.pendingDetach) {
+    return false;
+  }
+
+  if (dragState.hasVerticalReorderIntent) {
+    return true;
+  }
+
+  const verticalIntent = deltaY >= MOBILE_VERTICAL_REORDER_PX
+    && deltaY > deltaX * MOBILE_VERTICAL_REORDER_AXIS_BIAS;
+  dragState.hasVerticalReorderIntent = verticalIntent;
+  return verticalIntent;
 }
 
 // Nesting is driven by the horizontal axis (Notion/outliner style): reordering stays vertical,
@@ -250,35 +311,7 @@ function updateNestIntent(draggedItem, point) {
 }
 
 function resolveNestParent(draggedItem) {
-  let candidate = draggedItem.previousElementSibling;
-  while (candidate
-      && !(candidate.classList.contains('task-card') && candidate.dataset.taskId && !isDraggedOwnChild(candidate))) {
-    candidate = candidate.previousElementSibling;
-  }
-  if (!candidate) {
-    return null;
-  }
-
-  const parentId = candidate.dataset.parentTaskId
-    ? parseInt(candidate.dataset.parentTaskId, 10)
-    : parseInt(candidate.dataset.taskId, 10);
-  if (parentId === parseInt(draggedItem.dataset.taskId, 10)) {
-    return null;
-  }
-
-  const list = draggedItem.closest('.task-list');
-  const rootCard = list.querySelector(`.task-card[data-task-id="${parentId}"]`);
-  if (!rootCard) {
-    return null;
-  }
-
-  const draggedLabel = draggedItem.dataset.labelId;
-  const parentLabel = rootCard.dataset.labelId;
-  if (draggedLabel && parentLabel && draggedLabel !== parentLabel) {
-    return null;
-  }
-
-  return { parentId, rootCard };
+  return resolveNestParentForCard(draggedItem);
 }
 
 function isDraggedOwnChild(card) {
@@ -317,14 +350,49 @@ function getPointerCoordinates(pointerEvent) {
   };
 }
 
-function resolveStartX(evt, item) {
+function resolveStartPoint(evt, item) {
   const point = getPointerCoordinates(evt?.originalEvent);
   if (point) {
-    return point.x;
+    return point;
   }
 
   const rect = item.getBoundingClientRect();
-  return rect.left + (rect.width / 2);
+  return {
+    x: rect.left + (rect.width / 2),
+    y: rect.top + (rect.height / 2)
+  };
+}
+
+function resolveNestParentForCard(card) {
+  let candidate = card.previousElementSibling;
+  while (candidate
+      && !(candidate.classList.contains('task-card') && candidate.dataset.taskId && !isDraggedOwnChild(candidate))) {
+    candidate = candidate.previousElementSibling;
+  }
+  if (!candidate) {
+    return null;
+  }
+
+  const parentId = candidate.dataset.parentTaskId
+    ? parseInt(candidate.dataset.parentTaskId, 10)
+    : parseInt(candidate.dataset.taskId, 10);
+  if (parentId === parseInt(card.dataset.taskId, 10)) {
+    return null;
+  }
+
+  const list = card.closest('.task-list');
+  const rootCard = list.querySelector(`.task-card[data-task-id="${parentId}"]`);
+  if (!rootCard) {
+    return null;
+  }
+
+  const cardLabel = card.dataset.labelId;
+  const parentLabel = rootCard.dataset.labelId;
+  if (cardLabel && parentLabel && cardLabel !== parentLabel) {
+    return null;
+  }
+
+  return { parentId, rootCard };
 }
 
 function applyDragDomState(evt, parentTaskId, detach) {
@@ -606,6 +674,14 @@ function toggleEditMode() {
   if (editMode) {
     columnSortable = Sortable.create(document.getElementById('board'), {
       animation: 160,
+      delay: TOUCH_DRAG_DELAY_MS,
+      delayOnTouchOnly: true,
+      touchStartThreshold: TOUCH_START_THRESHOLD,
+      fallbackTolerance: TOUCH_FALLBACK_TOLERANCE,
+      fallbackOnBody: true,
+      scroll: true,
+      scrollSensitivity: SORTABLE_SCROLL_SENSITIVITY,
+      scrollSpeed: SORTABLE_SCROLL_SPEED,
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
       handle: '.column-header',
@@ -661,6 +737,11 @@ document.addEventListener('keydown', e => {
   if (document.getElementById('inputModal').style.display !== 'none') {
     if (e.key === 'Enter') confirmInputModal();
     if (e.key === 'Escape') cancelInputModal();
+  }
+
+  const deleteTaskModal = document.getElementById('deleteTaskModal');
+  if (deleteTaskModal && deleteTaskModal.style.display !== 'none' && e.key === 'Escape') {
+    closeDeleteTaskModal();
   }
 });
 
@@ -829,6 +910,37 @@ function bindBoardFilters() {
   syncBoardLabelFilterText();
   renderBoardLabelFilterOptions();
   applyBoardFilters();
+}
+
+function bindMobileFilterToggle() {
+  const navbar = document.querySelector('.navbar');
+  const toggle = document.getElementById('boardMobileFilterToggle');
+  if (!navbar || !toggle) {
+    return;
+  }
+
+  const mobileQuery = window.matchMedia(MOBILE_BOARD_QUERY);
+  const closeFilters = () => {
+    navbar.classList.remove('mobile-filters-open');
+    toggle.setAttribute('aria-expanded', 'false');
+  };
+
+  toggle.addEventListener('click', () => {
+    const isOpen = navbar.classList.toggle('mobile-filters-open');
+    toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  });
+
+  const handleBreakpointChange = event => {
+    if (!event.matches) {
+      closeFilters();
+    }
+  };
+
+  if (typeof mobileQuery.addEventListener === 'function') {
+    mobileQuery.addEventListener('change', handleBreakpointChange);
+  } else if (typeof mobileQuery.addListener === 'function') {
+    mobileQuery.addListener(handleBreakpointChange);
+  }
 }
 
 function normalizeBoardFilterText(value) {
@@ -1139,15 +1251,60 @@ function quickAddFromInput(input) {
   clearQuickAddState(input);
   api('POST', '/api/tasks/quick', { title, columnId: colId })
     .then(task => {
-      try {
-        sessionStorage.setItem('kando_new_task_col', String(colId));
-        if (task?.id) sessionStorage.setItem('kando_new_task_id', String(task.id));
-      } catch (e) { /* ignore */ }
-      reloadPreservingScroll();
+      insertNewTaskCard(task, colId);
+      input.value = '';
+      hideLabelSuggest();
+      input.focus();
     })
     .catch(async error => {
       setQuickAddState(input, await extractApiErrorMessage(error, 'No he podido crear la tarea.'));
     });
+}
+
+function insertNewTaskCard(task, colId) {
+  const list = document.querySelector(`.task-list[data-col-id="${colId}"]`);
+  if (!list) {
+    return;
+  }
+
+  const card = buildTaskCardElement(task);
+  const quickAddCard = list.querySelector('.quick-add-card');
+  quickAddCard ? quickAddCard.after(card) : list.prepend(card);
+
+  bindTaskCardInteractions();
+  card.classList.add('task-card-new');
+  card.addEventListener('animationend', () => card.classList.remove('task-card-new'), { once: true });
+}
+
+function buildTaskCardElement(task) {
+  const card = document.createElement('div');
+  card.className = 'task-card';
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
+  card.dataset.taskId = task.id;
+  card.dataset.columnId = task.columnId;
+  if (task.parentTaskId) card.dataset.parentTaskId = task.parentTaskId;
+  if (task.primaryLabel) card.dataset.labelId = task.primaryLabel.id;
+  card.dataset.completed = String(Boolean(task.completed));
+  if (task.accentColor) card.style.borderLeft = `4px solid ${task.accentColor}`;
+
+  const main = document.createElement('div');
+  main.className = 'task-main';
+  const title = document.createElement('span');
+  title.className = 'task-title';
+  title.textContent = task.title;
+  main.appendChild(title);
+  card.appendChild(main);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'task-delete-btn';
+  deleteBtn.type = 'button';
+  deleteBtn.title = 'Eliminar tarea';
+  deleteBtn.dataset.taskId = task.id;
+  deleteBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1.5 14a2 2 0 0 1-2 1.5H8.5a2 2 0 0 1-2-1.5L5 6"/><path d="M10 11v5M14 11v5"/></svg>';
+  card.appendChild(deleteBtn);
+
+  return card;
 }
 
 function validateQuickAddTitle(title) {
@@ -1441,6 +1598,145 @@ function navigateLabelSuggest(delta) {
 }
 
 /* ── Scroll preservation across reload ──────────────────────────────────── */
+function bindMobileColumnScrollGate() {
+  const wrapper = document.querySelector('.board-wrapper');
+  const shell = document.querySelector('.board-shell');
+  if (!wrapper) {
+    return;
+  }
+
+  const mobileQuery = window.matchMedia(MOBILE_BOARD_QUERY);
+  let gesture = null;
+
+  const clearGesture = () => {
+    gesture = null;
+    wrapper.classList.remove('board-header-pan-active');
+    if (!wrapper.classList.contains('board-task-drag-active')
+      && !wrapper.classList.contains('board-horizontal-settling')) {
+      wrapper.classList.remove('board-horizontal-locked');
+    }
+  };
+
+  const syncHeaderCompactState = () => {
+    wrapper.classList.toggle('board-scrolled-y', mobileQuery.matches && wrapper.scrollTop > MOBILE_HEADER_COMPACT_SCROLL_PX);
+  };
+
+  const syncColumnAffordances = () => {
+    if (!shell) {
+      return;
+    }
+
+    if (!mobileQuery.matches) {
+      shell.classList.remove('board-can-pan-left', 'board-can-pan-right');
+      return;
+    }
+
+    const snapPoints = getBoardColumnSnapPoints(wrapper);
+    if (snapPoints.length < 2) {
+      shell.classList.remove('board-can-pan-left', 'board-can-pan-right');
+      return;
+    }
+
+    const nearest = resolveNearestBoardColumn(wrapper, snapPoints);
+    if (!nearest) {
+      shell.classList.remove('board-can-pan-left', 'board-can-pan-right');
+      return;
+    }
+
+    shell.classList.toggle('board-can-pan-left', nearest.index > 0);
+    shell.classList.toggle('board-can-pan-right', nearest.index < snapPoints.length - 1);
+  };
+
+  wrapper.addEventListener('touchstart', event => {
+    if (!mobileQuery.matches || event.touches.length !== 1) {
+      clearGesture();
+      return;
+    }
+
+    setBoardHorizontalSettling(false);
+
+    const touch = event.touches[0];
+    const target = event.target instanceof Element ? event.target : null;
+    const startsOnColumnHeader = Boolean(
+      target?.closest('.column-header')
+      && !target.closest('button, input, textarea, select, a')
+    );
+    gesture = {
+      allowHorizontalScroll: startsOnColumnHeader,
+      hasHorizontalIntent: false,
+      startScrollLeft: wrapper.scrollLeft,
+      startScrollTop: wrapper.scrollTop,
+      startX: touch.clientX,
+      startY: touch.clientY
+    };
+    wrapper.classList.toggle('board-header-pan-active', startsOnColumnHeader);
+    wrapper.classList.toggle('board-horizontal-locked', !startsOnColumnHeader);
+  }, { passive: true });
+
+  wrapper.addEventListener('touchmove', event => {
+    if (!gesture || !mobileQuery.matches || event.touches.length !== 1) {
+      return;
+    }
+
+    const touch = event.touches[0];
+    const deltaX = Math.abs(touch.clientX - gesture.startX);
+    const deltaY = Math.abs(touch.clientY - gesture.startY);
+    if (gesture.allowHorizontalScroll) {
+      if (deltaY > MOBILE_HORIZONTAL_SCROLL_LOCK_PX && deltaY > deltaX) {
+        wrapper.scrollTop = gesture.startScrollTop;
+        event.preventDefault();
+        return;
+      }
+      if (deltaX >= MOBILE_HORIZONTAL_SCROLL_LOCK_PX && deltaX > deltaY) {
+        gesture.hasHorizontalIntent = true;
+        suppressTaskClickUntil = Date.now() + 220;
+      }
+      return;
+    }
+
+    if (wrapper.scrollTop <= 0 && touch.clientY > gesture.startY) {
+      wrapper.scrollTop = 0;
+      event.preventDefault();
+      return;
+    }
+
+    if (deltaX < MOBILE_HORIZONTAL_SCROLL_LOCK_PX || deltaX <= deltaY) {
+      return;
+    }
+
+    suppressTaskClickUntil = Date.now() + 220;
+    wrapper.scrollLeft = gesture.startScrollLeft;
+    event.preventDefault();
+  }, { passive: false });
+
+  wrapper.addEventListener('touchend', () => {
+    const shouldSnap = Boolean(gesture?.allowHorizontalScroll && gesture.hasHorizontalIntent);
+    clearGesture();
+    if (shouldSnap) {
+      snapBoardToNearestColumn(wrapper);
+      setBoardHorizontalSettling(true);
+    }
+  }, { passive: true });
+  wrapper.addEventListener('touchcancel', clearGesture, { passive: true });
+  wrapper.addEventListener('scroll', () => {
+    syncHeaderCompactState();
+    syncColumnAffordances();
+  }, { passive: true });
+  if (typeof mobileQuery.addEventListener === 'function') {
+    mobileQuery.addEventListener('change', () => {
+      syncHeaderCompactState();
+      syncColumnAffordances();
+    });
+  } else if (typeof mobileQuery.addListener === 'function') {
+    mobileQuery.addListener(() => {
+      syncHeaderCompactState();
+      syncColumnAffordances();
+    });
+  }
+  syncHeaderCompactState();
+  syncColumnAffordances();
+}
+
 function reloadPreservingScroll() {
   const wrapper = document.querySelector('.board-wrapper');
   if (wrapper) {
@@ -1455,40 +1751,160 @@ function restoreBoardScroll() {
   let pos;
   try {
     const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
-    if (!raw) return;
+    if (!raw) return false;
     pos = JSON.parse(raw);
     sessionStorage.removeItem(SCROLL_STORAGE_KEY);
-  } catch (e) { return; }
+  } catch (e) { return false; }
   const wrapper = document.querySelector('.board-wrapper');
   if (wrapper && pos) {
     wrapper.scrollLeft = pos.x || 0;
     wrapper.scrollTop  = pos.y || 0;
+    return true;
   }
+  return false;
 }
 
-/* ── New task entrance animation ─────────────────────────────────────────── */
-function animateNewlyAddedTask() {
-  let colId, taskId;
-  try {
-    colId  = sessionStorage.getItem('kando_new_task_col');
-    taskId = sessionStorage.getItem('kando_new_task_id');
-  } catch (e) { return; }
-  if (!colId) return;
-  try {
-    sessionStorage.removeItem('kando_new_task_col');
-    sessionStorage.removeItem('kando_new_task_id');
-  } catch (e) { /* ignore */ }
+function getBoardColumnSnapPoints(wrapper = document.querySelector('.board-wrapper')) {
+  if (!wrapper) {
+    return [];
+  }
 
-  const list = document.querySelector(`.task-list[data-col-id="${colId}"]`);
-  if (!list) return;
+  const wrapperRect = wrapper.getBoundingClientRect();
+  return [...document.querySelectorAll('.column[data-col-id]')].map((column, index) => {
+    const columnRect = column.getBoundingClientRect();
+    return {
+      column,
+      index,
+      left: Math.max(0, (columnRect.left - wrapperRect.left) + wrapper.scrollLeft)
+    };
+  });
+}
 
-  const newest = taskId
-    ? list.querySelector(`.task-card[data-task-id="${taskId}"]`)
-    : list.querySelector('.task-card[data-task-id]:not(.task-card-subtask)');
-  if (!newest) return;
+function resolveNearestBoardColumn(wrapper = document.querySelector('.board-wrapper'), snapPoints = getBoardColumnSnapPoints(wrapper)) {
+  if (!wrapper || !snapPoints.length) {
+    return null;
+  }
 
-  newest.classList.add('task-card-new');
-  newest.addEventListener('animationend', () => newest.classList.remove('task-card-new'), { once: true });
+  return snapPoints.reduce((nearest, point) => {
+    if (!nearest) {
+      return point;
+    }
+    const currentDistance = Math.abs(point.left - wrapper.scrollLeft);
+    const nearestDistance = Math.abs(nearest.left - wrapper.scrollLeft);
+    return currentDistance < nearestDistance ? point : nearest;
+  }, null);
+}
+
+function snapBoardToNearestColumn(wrapper = document.querySelector('.board-wrapper')) {
+  const nearest = resolveNearestBoardColumn(wrapper);
+  if (!wrapper || !nearest) {
+    return;
+  }
+
+  wrapper.scrollTo({
+    left: nearest.left,
+    behavior: 'smooth'
+  });
+}
+
+function findTodayColumnWithTasks() {
+  return [...document.querySelectorAll('.column[data-col-id]')].find(column => {
+    const name = column.querySelector('.column-title')?.textContent?.trim().toLowerCase();
+    if (name !== 'hoy') {
+      return false;
+    }
+    return column.querySelectorAll('.task-card[data-task-id]').length > 0;
+  }) || null;
+}
+
+function focusInitialMobileColumn(hasRestoredScroll) {
+  if (hasRestoredScroll || !window.matchMedia(MOBILE_BOARD_QUERY).matches) {
+    return;
+  }
+
+  const wrapper = document.querySelector('.board-wrapper');
+  const todayColumn = findTodayColumnWithTasks();
+  if (!wrapper || !todayColumn) {
+    return;
+  }
+
+  const wrapperRect = wrapper.getBoundingClientRect();
+  const todayRect = todayColumn.getBoundingClientRect();
+  const targetLeft = Math.max(0, (todayRect.left - wrapperRect.left) + wrapper.scrollLeft);
+
+  requestAnimationFrame(() => {
+    wrapper.scrollLeft = targetLeft;
+  });
+}
+
+function setBoardTaskDragLock(isActive, releaseDelay = 0) {
+  const wrapper = document.querySelector('.board-wrapper');
+  if (!wrapper) {
+    return;
+  }
+
+  if (boardTaskDragUnlockTimer) {
+    window.clearTimeout(boardTaskDragUnlockTimer);
+    boardTaskDragUnlockTimer = null;
+  }
+
+  if (isActive) {
+    wrapper.classList.add('board-task-drag-active');
+    wrapper.classList.add('board-horizontal-locked');
+    return;
+  }
+
+  const release = () => {
+    const currentWrapper = document.querySelector('.board-wrapper');
+    currentWrapper?.classList.remove('board-task-drag-active');
+    if (currentWrapper
+      && !currentWrapper.classList.contains('board-horizontal-settling')
+      && !currentWrapper.classList.contains('board-header-pan-active')) {
+      currentWrapper.classList.remove('board-horizontal-locked');
+    }
+    boardTaskDragUnlockTimer = null;
+  };
+
+  if (releaseDelay > 0) {
+    boardTaskDragUnlockTimer = window.setTimeout(release, releaseDelay);
+    return;
+  }
+
+  release();
+}
+
+function setBoardHorizontalSettling(isActive) {
+  const wrapper = document.querySelector('.board-wrapper');
+  if (!wrapper) {
+    return;
+  }
+
+  if (boardHorizontalSettleTimer) {
+    window.clearTimeout(boardHorizontalSettleTimer);
+    boardHorizontalSettleTimer = null;
+  }
+
+  if (!isActive) {
+    wrapper.classList.remove('board-horizontal-settling');
+    if (!wrapper.classList.contains('board-task-drag-active')
+      && !wrapper.classList.contains('board-header-pan-active')) {
+      wrapper.classList.remove('board-horizontal-locked');
+    }
+    return;
+  }
+
+  wrapper.classList.add('board-horizontal-settling');
+  wrapper.classList.add('board-horizontal-locked');
+  boardHorizontalSettleTimer = window.setTimeout(() => {
+    const currentWrapper = document.querySelector('.board-wrapper');
+    currentWrapper?.classList.remove('board-horizontal-settling');
+    if (currentWrapper
+      && !currentWrapper.classList.contains('board-task-drag-active')
+      && !currentWrapper.classList.contains('board-header-pan-active')) {
+      currentWrapper.classList.remove('board-horizontal-locked');
+    }
+    boardHorizontalSettleTimer = null;
+  }, MOBILE_BOARD_SETTLE_LOCK_MS);
 }
 
 /* ── Task cards ───────────────────────────────────────────────────────────── */
@@ -1524,7 +1940,145 @@ function bindTaskCardInteractions() {
     if (card.querySelector('.task-delete-btn')) {
       bindDeleteTaskButton(card.querySelector('.task-delete-btn'));
     }
+    bindMobileTaskSwipe(card);
   });
+}
+
+function bindMobileTaskSwipe(card) {
+  if (card.dataset.boundMobileSwipe === 'true') {
+    return;
+  }
+
+  card.dataset.boundMobileSwipe = 'true';
+  card.addEventListener('touchstart', event => {
+    if (!window.matchMedia(MOBILE_BOARD_QUERY).matches || event.touches.length !== 1 || dragState) {
+      clearMobileTaskSwipeState();
+      return;
+    }
+
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('button, input, textarea, select, a')) {
+      clearMobileTaskSwipeState();
+      return;
+    }
+
+    const touch = event.touches[0];
+    mobileTaskSwipeState = {
+      card,
+      intent: null,
+      startX: touch.clientX,
+      startY: touch.clientY
+    };
+  }, { passive: true });
+
+  card.addEventListener('touchmove', event => {
+    if (!mobileTaskSwipeState || mobileTaskSwipeState.card !== card || event.touches.length !== 1 || dragState) {
+      return;
+    }
+
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - mobileTaskSwipeState.startX;
+    const deltaY = Math.abs(touch.clientY - mobileTaskSwipeState.startY);
+    const distanceX = Math.abs(deltaX);
+    const horizontalGesture = distanceX >= MOBILE_TASK_SWIPE_X
+      && distanceX > deltaY * MOBILE_TASK_SWIPE_AXIS_BIAS;
+    const intent = resolveMobileTaskSwipeIntent(card, deltaX, deltaY);
+
+    clearMobileTaskSwipePreview(card);
+    if (!intent) {
+      mobileTaskSwipeState.intent = null;
+      if (horizontalGesture) {
+        suppressTaskClickUntil = Date.now() + 220;
+        event.preventDefault();
+      }
+      return;
+    }
+
+    mobileTaskSwipeState.intent = intent;
+    suppressTaskClickUntil = Date.now() + 220;
+    event.preventDefault();
+
+    if (intent.type === 'nest') {
+      card.classList.add('task-card-nesting');
+      intent.rootCard.classList.add('task-card-drop-target');
+      return;
+    }
+
+    card.classList.add('task-card-detaching');
+  }, { passive: false });
+
+  card.addEventListener('touchend', () => {
+    commitMobileTaskSwipe(card);
+  }, { passive: true });
+  card.addEventListener('touchcancel', () => {
+    clearMobileTaskSwipeState();
+  }, { passive: true });
+}
+
+function resolveMobileTaskSwipeIntent(card, deltaX, deltaY) {
+  const distanceX = Math.abs(deltaX);
+  if (distanceX < MOBILE_TASK_SWIPE_X || distanceX <= deltaY * MOBILE_TASK_SWIPE_AXIS_BIAS) {
+    return null;
+  }
+
+  if (deltaX < 0) {
+    return card.dataset.parentTaskId ? { type: 'detach' } : null;
+  }
+
+  const target = resolveNestParentForCard(card);
+  if (!target || card.dataset.parentTaskId === String(target.parentId)) {
+    return null;
+  }
+
+  return { type: 'nest', parentId: target.parentId, rootCard: target.rootCard };
+}
+
+function commitMobileTaskSwipe(card) {
+  const state = mobileTaskSwipeState;
+  if (!state || state.card !== card) {
+    clearMobileTaskSwipeState();
+    return;
+  }
+
+  const intent = state.intent;
+  clearMobileTaskSwipeState();
+  if (!intent) {
+    return;
+  }
+
+  const list = card.closest('.task-list');
+  const columnId = parseInt(list.dataset.colId, 10);
+  let parentTaskId = null;
+
+  if (intent.type === 'nest') {
+    const children = getDirectSubtaskElements(card);
+    moveCardAfterSubtree(card, intent.rootCard, list);
+    setTaskAsSubtask(card, intent.parentId, columnId);
+    children.forEach(child => setTaskAsRoot(child, columnId));
+    parentTaskId = intent.parentId;
+  } else {
+    setTaskAsRoot(card, columnId);
+  }
+
+  suppressTaskClickUntil = Date.now() + 300;
+  api('POST', `/api/tasks/${parseInt(card.dataset.taskId, 10)}/move`, {
+    targetColumnId: columnId,
+    newPosition: getTaskIndex(card),
+    parentTaskId
+  }).catch(() => location.reload());
+}
+
+function clearMobileTaskSwipeState() {
+  if (mobileTaskSwipeState?.card) {
+    clearMobileTaskSwipePreview(mobileTaskSwipeState.card);
+  }
+  mobileTaskSwipeState = null;
+}
+
+function clearMobileTaskSwipePreview(card) {
+  clearTaskDropTargets();
+  card.classList.remove('task-card-nesting');
+  card.classList.remove('task-card-detaching');
 }
 
 function bindDeleteTaskButton(button) {
@@ -1537,9 +2091,64 @@ function bindDeleteTaskButton(button) {
     event.stopPropagation();
     if (Date.now() < suppressTaskClickUntil) return;
     const taskId = parseInt(event.currentTarget.dataset.taskId, 10);
-    if (!confirm('¿Eliminar esta tarea?')) return;
-    api('DELETE', `/api/tasks/${taskId}`).then(() => reloadPreservingScroll());
+    requestDeleteTask(taskId);
   });
+}
+
+function requestDeleteTask(taskId) {
+  if (!taskId) {
+    return;
+  }
+
+  const modal = document.getElementById('deleteTaskModal');
+  const confirmButton = document.getElementById('deleteTaskConfirmButton');
+  if (!modal || !confirmButton) {
+    return;
+  }
+
+  pendingDeleteTaskId = taskId;
+  confirmButton.disabled = false;
+  confirmButton.textContent = 'Eliminar tarea';
+  modal.style.display = 'flex';
+  setTimeout(() => confirmButton.focus(), 50);
+}
+
+function closeDeleteTaskModal() {
+  pendingDeleteTaskId = null;
+  const modal = document.getElementById('deleteTaskModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+function closeDeleteTaskModalOutside(event) {
+  if (event.target === document.getElementById('deleteTaskModal')) {
+    closeDeleteTaskModal();
+  }
+}
+
+function confirmDeleteTask() {
+  if (!pendingDeleteTaskId) {
+    closeDeleteTaskModal();
+    return;
+  }
+
+  const taskId = pendingDeleteTaskId;
+  const confirmButton = document.getElementById('deleteTaskConfirmButton');
+  if (confirmButton) {
+    confirmButton.disabled = true;
+    confirmButton.textContent = 'Eliminando...';
+  }
+
+  api('DELETE', `/api/tasks/${taskId}`)
+    .then(() => reloadPreservingScroll())
+    .catch(async error => {
+      if (confirmButton) {
+        confirmButton.disabled = false;
+        confirmButton.textContent = 'Eliminar tarea';
+      }
+      alert(await extractApiErrorMessage(error, 'No he podido eliminar la tarea.'));
+    });
 }
 
 /* ── Task modal ───────────────────────────────────────────────────────────── */
@@ -2199,10 +2808,7 @@ function deleteCurrentTask() {
   if (!currentTaskId) {
     return;
   }
-  if (!confirm('¿Eliminar esta tarea?')) {
-    return;
-  }
-  api('DELETE', `/api/tasks/${currentTaskId}`).then(() => reloadPreservingScroll());
+  requestDeleteTask(currentTaskId);
 }
 
 function closeModal() {

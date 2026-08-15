@@ -78,6 +78,7 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - Si se arrastra una subtarea a otra columna como tarea normal, pasa a nivel raíz y recupera al instante su chip de etiqueta y su botón `+`
 - Arrastrar columnas en modo edición
 - Implementado con SortableJS
+- En dispositivos táctiles, el drag usa una pulsación breve antes de iniciar el arrastre para evitar conflictos con el scroll normal
 
 ### Ordenación por etiqueta
 
@@ -166,6 +167,25 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - Sesión de **30 días** de duración (`server.servlet.session.timeout=30d`)
 - Cookie `remember-me` con validez de 30 días (`SecurityConfig`): el login persiste aunque se cierre y reabra el navegador
 
+### Mobile Safari / iPhone
+
+- El tablero mantiene el modelo Kanban en iPhone: las columnas se recorren en horizontal, ocupan casi todo el ancho útil y el cambio de columna se hace de forma deliberada desde la cabecera
+- Si existe la columna `Hoy` y tiene tareas, el tablero móvil arranca directamente ahí
+- El layout móvil está aislado bajo breakpoint móvil para no cambiar la experiencia de escritorio
+- Safari iOS usa `viewport-fit=cover`, `100dvh` cuando está disponible y `env(safe-area-inset-*)` para ajustar notch, Dynamic Island y esquinas sin cortar la zona visible
+- La navbar móvil es fija, compacta y pegada al borde superior: marca a la izquierda, filtros plegables cerrados por defecto y perfil arriba a la derecha
+- El botón `Crear` pasa a ser un FAB circular superpuesto abajo derecha en móvil, sin reservar una barra inferior vacía
+- El scroll horizontal entre columnas en móvil solo se habilita desde la cabecera/título de columna; si el gesto empieza en tarjetas o cuerpo del tablero se bloquea el desplazamiento horizontal, también durante la inercia/asentado del scroll
+- Hay indicadores laterales discretos para dejar claro si existen columnas a izquierda y/o derecha
+- El scroll vertical móvil ocurre en el tablero, con cabecera de columna sticky y una máscara superior para evitar que las tarjetas se vean por encima del título de columna
+- Las tarjetas soportan swipe rápido izquierda/derecha para anidar/desanidar sin esperar al long-press de SortableJS
+- El gesto horizontal de anidar/desanidar tiene umbral bajo, muestra indentado visible en móvil y reordenar tareas verticalmente exige intención vertical clara para evitar movimientos accidentales
+- La cabecera de columna no se desplaza verticalmente al arrastrarla; al hacer scroll del contenido se compacta ligeramente, queda sticky y respeta las esquinas redondeadas
+- Inputs y pickers suben a `16px` en móvil para evitar el auto-zoom de Safari al enfocar campos
+- Las acciones de tarjeta que en escritorio aparecen al hover se muestran siempre en touch, porque iPhone no tiene hover real
+- Modales, dropdown de perfil y pickers respetan safe-area y usan scroll interno con inercia táctil
+- El borrado de tareas usa un modal propio de Kando en lugar del diálogo nativo del navegador
+
 ### Etiquetas (como modal)
 
 - La gestión de etiquetas abre como modal desde el dropdown del perfil
@@ -235,7 +255,7 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 
 ## Pendiente / posibles mejoras futuras
 
-- [ ] Hacer que funcione bien en navegador movil (iPhone 17 pro)
+- [ ] Validar en dispositivo físico iPhone 17 Pro con Safari real además de emulación de viewport
 
 ---
 
