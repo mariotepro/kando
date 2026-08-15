@@ -12,6 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UserService implements UserDetailsService {
 
+    private static final String USER_NOT_FOUND = "Usuario no encontrado";
+
     private final KandoUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
@@ -45,7 +47,7 @@ public class UserService implements UserDetailsService {
      */
     public KandoUser getUserOrThrow(String username) {
         return userRepository.findByUsername(username)
-            .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado"));
+            .orElseThrow(() -> new IllegalArgumentException(USER_NOT_FOUND));
     }
 
     public KandoUser getProfileOrFallback(String username) {
@@ -60,7 +62,7 @@ public class UserService implements UserDetailsService {
     public KandoUser updateProfile(String currentUsername, String displayName, String email,
                                    String avatarColor, String newUsername) {
         KandoUser user = userRepository.findByUsername(currentUsername)
-            .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado"));
+            .orElseThrow(() -> new IllegalArgumentException(USER_NOT_FOUND));
 
         if (newUsername != null && !newUsername.isBlank()) {
             String trimmed = newUsername.trim();
@@ -84,7 +86,7 @@ public class UserService implements UserDetailsService {
     @Transactional
     public void changePassword(String username, String currentPassword, String newPassword) {
         KandoUser user = userRepository.findByUsername(username)
-            .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado"));
+            .orElseThrow(() -> new IllegalArgumentException(USER_NOT_FOUND));
 
         if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
             throw new IllegalArgumentException("La contraseña actual no es correcta");

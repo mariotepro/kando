@@ -1,5 +1,6 @@
 package com.kando.controller;
 
+import com.kando.dto.TaskRequest;
 import com.kando.model.Board;
 import com.kando.model.BoardColumn;
 import com.kando.model.KandoUser;
@@ -285,7 +286,7 @@ class BoardControllerTest extends BaseControllerTest {
     @Test
     void updateTask_returnsUpdatedTask() throws Exception {
         task.setTitle("Actualizada");
-        when(boardService.updateTask(eq(5L), anyString(), any(), any(), any(), any(), any(), eq(mockUser))).thenReturn(task);
+        when(boardService.updateTask(eq(5L), any(TaskRequest.class), eq(mockUser))).thenReturn(task);
 
         String body = """
             { "title": "Actualizada", "notes": null, "dueDate": null, "labelId": 10, "columnId": 1, "parentTaskId": null }

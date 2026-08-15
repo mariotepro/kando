@@ -1,5 +1,6 @@
 package com.kando;
 
+import com.kando.dto.TaskRequest;
 import com.kando.model.Board;
 import com.kando.model.BoardColumn;
 import com.kando.model.KandoUser;
@@ -109,8 +110,9 @@ class BoardIntegrationTest {
     @Test
     void renameColumn_notOwner_throwsIllegalArgument() {
         KandoUser otherUser = createOtherUser();
+        Long columnId = colHoy.getId();
 
-        assertThatThrownBy(() -> boardService.renameColumn(colHoy.getId(), otherUser, "Robada"))
+        assertThatThrownBy(() -> boardService.renameColumn(columnId, otherUser, "Robada"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Column not found");
     }
@@ -193,8 +195,9 @@ class BoardIntegrationTest {
     @Test
     void renameBoard_notOwner_throwsIllegalArgument() {
         KandoUser otherUser = createOtherUser();
+        Long boardId = board.getId();
 
-        assertThatThrownBy(() -> boardService.renameBoard(board.getId(), otherUser, "Robado"))
+        assertThatThrownBy(() -> boardService.renameBoard(boardId, otherUser, "Robado"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Board not found");
     }
@@ -213,7 +216,8 @@ class BoardIntegrationTest {
 
     @Test
     void deleteBoard_onlyBoard_throwsAndKeepsIt() {
-        assertThatThrownBy(() -> boardService.deleteBoard(board.getId(), owner))
+        Long boardId = board.getId();
+        assertThatThrownBy(() -> boardService.deleteBoard(boardId, owner))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("único tablero");
 
@@ -234,8 +238,9 @@ class BoardIntegrationTest {
     @Test
     void createQuickTask_notOwner_throwsIllegalArgument() {
         KandoUser otherUser = createOtherUser();
+        Long columnId = colHoy.getId();
 
-        assertThatThrownBy(() -> boardService.createQuick("Ajena", colHoy.getId(), otherUser))
+        assertThatThrownBy(() -> boardService.createQuick("Ajena", columnId, otherUser))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Column not found");
     }
@@ -266,9 +271,9 @@ class BoardIntegrationTest {
     void updateTask_persistsAllFields() {
         Task task = createTaggedTask("Original");
 
-        boardService.updateTask(task.getId(), "Actualizada",
-            "Mis notas aquí", LocalDate.of(2026, 12, 31), labelUrgente.getId(),
-            colHoy.getId(), null, owner);
+        TaskRequest request = taskRequest("Actualizada", "Mis notas aquí",
+            LocalDate.of(2026, 12, 31), labelUrgente.getId(), colHoy.getId(), null);
+        boardService.updateTask(task.getId(), request, owner);
 
         Task reloaded = taskRepository.findById(task.getId()).orElseThrow();
         assertThat(reloaded.getTitle()).isEqualTo("Actualizada");
@@ -282,8 +287,9 @@ class BoardIntegrationTest {
         Task task = createTaggedTask("Original");
         KandoUser otherUser = createOtherUser();
 
-        assertThatThrownBy(() -> boardService.updateTask(task.getId(), "Robada",
-            null, null, null, colHoy.getId(), null, otherUser))
+        Long taskId = task.getId();
+        TaskRequest request = taskRequest("Robada", null, null, null, colHoy.getId(), null);
+        assertThatThrownBy(() -> boardService.updateTask(taskId, request, otherUser))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Task not found");
     }
@@ -313,8 +319,9 @@ class BoardIntegrationTest {
         foreignColumn.setName("Ajena");
         foreignColumn = columnRepository.save(foreignColumn);
         Long foreignColumnId = foreignColumn.getId();
+        Long taskId = task.getId();
 
-        assertThatThrownBy(() -> boardService.moveTask(task.getId(), foreignColumnId, 0, null, owner))
+        assertThatThrownBy(() -> boardService.moveTask(taskId, foreignColumnId, 0, null, owner))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Column not found");
     }
@@ -344,8 +351,9 @@ class BoardIntegrationTest {
     void deleteTask_notOwner_throwsIllegalArgument() {
         Task task = createTaggedTask("Para eliminar");
         KandoUser otherUser = createOtherUser();
+        Long taskId = task.getId();
 
-        assertThatThrownBy(() -> boardService.deleteTask(task.getId(), otherUser))
+        assertThatThrownBy(() -> boardService.deleteTask(taskId, otherUser))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Task not found");
         assertThat(taskRepository.findById(task.getId())).isPresent();
@@ -386,8 +394,9 @@ class BoardIntegrationTest {
     @Test
     void updateLabel_notOwner_throwsIllegalArgument() {
         KandoUser otherUser = createOtherUser();
+        Long labelId = labelUrgente.getId();
 
-        assertThatThrownBy(() -> labelService.update(labelUrgente.getId(), otherUser, "Robada", "#000000"))
+        assertThatThrownBy(() -> labelService.update(labelId, otherUser, "Robada", "#000000"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Label not found");
     }
@@ -491,8 +500,9 @@ class BoardIntegrationTest {
     void findTask_notOwner_throwsIllegalArgument() {
         Task task = createTaggedTask("Ajena");
         KandoUser otherUser = createOtherUser();
+        Long taskId = task.getId();
 
-        assertThatThrownBy(() -> boardService.findTask(task.getId(), otherUser))
+        assertThatThrownBy(() -> boardService.findTask(taskId, otherUser))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Task not found");
     }
@@ -540,22 +550,24 @@ class BoardIntegrationTest {
 
     @Test
     void createQuickTask_withoutLabel_throwsIllegalArgument() {
-        assertThatThrownBy(() -> boardService.createQuick("Sin etiqueta", colHoy.getId(), owner))
+        Long columnId = colHoy.getId();
+        assertThatThrownBy(() -> boardService.createQuick("Sin etiqueta", columnId, owner))
             .isInstanceOf(com.kando.service.LabelNotFoundException.class)
             .hasMessageContaining("label is required");
     }
 
     @Test
     void createQuickTask_blankTitleAfterHashtag_throwsIllegalArgument() {
-        assertThatThrownBy(() -> boardService.createQuick("#urgente", colHoy.getId(), owner))
+        Long columnId = colHoy.getId();
+        assertThatThrownBy(() -> boardService.createQuick("#urgente", columnId, owner))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("title is required");
     }
 
     @Test
     void updateTask_unknownTask_throwsIllegalArgument() {
-        assertThatThrownBy(() ->
-            boardService.updateTask(99999L, "Título", null, null, null, colHoy.getId(), null, owner))
+        TaskRequest request = taskRequest("Título", null, null, null, colHoy.getId(), null);
+        assertThatThrownBy(() -> boardService.updateTask(99999L, request, owner))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Task not found");
     }
@@ -563,9 +575,10 @@ class BoardIntegrationTest {
     @Test
     void moveTask_selfParent_throwsIllegalArgument() {
         Task task = createTaggedTask("Autoref");
+        Long taskId = task.getId();
+        Long columnId = colHoy.getId();
 
-        assertThatThrownBy(() ->
-            boardService.moveTask(task.getId(), colHoy.getId(), 0, task.getId(), owner))
+        assertThatThrownBy(() -> boardService.moveTask(taskId, columnId, 0, taskId, owner))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("cannot be its own parent");
     }
@@ -576,9 +589,11 @@ class BoardIntegrationTest {
         Task parent      = createTaggedTask("Padre");
         boardService.moveTask(parent.getId(), colHoy.getId(), 0, grandparent.getId(), owner);
         Task child = createTaggedTask("Nieto");
+        Long childId = child.getId();
+        Long columnId = colHoy.getId();
+        Long parentId = parent.getId();
 
-        assertThatThrownBy(() ->
-            boardService.moveTask(child.getId(), colHoy.getId(), 0, parent.getId(), owner))
+        assertThatThrownBy(() -> boardService.moveTask(childId, columnId, 0, parentId, owner))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("subtask");
     }
@@ -588,9 +603,11 @@ class BoardIntegrationTest {
         Label backend = labelRepository.save(labelWithName("backend", "#6366f1"));
         Task parent = boardService.createQuick("Padre backend", colHoy.getId(), backend.getId(), owner);
         Task child  = createTaggedTask("Hijo urgente");
+        Long childId = child.getId();
+        Long columnId = colHoy.getId();
+        Long parentId = parent.getId();
 
-        assertThatThrownBy(() ->
-            boardService.moveTask(child.getId(), colHoy.getId(), 0, parent.getId(), owner))
+        assertThatThrownBy(() -> boardService.moveTask(childId, columnId, 0, parentId, owner))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("etiqueta");
     }
@@ -611,6 +628,17 @@ class BoardIntegrationTest {
 
     private Task createTaggedTask(String title) {
         return boardService.createQuick(title, colHoy.getId(), labelUrgente.getId(), owner);
+    }
+
+    private TaskRequest taskRequest(String title, String notes, LocalDate dueDate, Long labelId, Long columnId, Long parentTaskId) {
+        TaskRequest request = new TaskRequest();
+        request.setTitle(title);
+        request.setNotes(notes);
+        request.setDueDate(dueDate);
+        request.setLabelId(labelId);
+        request.setColumnId(columnId);
+        request.setParentTaskId(parentTaskId);
+        return request;
     }
 
     private KandoUser createOtherUser() {

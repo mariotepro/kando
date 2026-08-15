@@ -13,6 +13,10 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 @RequiredArgsConstructor
 public class SetupController {
 
+    private static final String SUCCESS_ATTR = "success";
+    private static final String ERROR_ATTR = "error";
+    private static final String REDIRECT_SETUP = "redirect:/setup";
+
     private final SetupService setupService;
     private final UserService userService;
 
@@ -27,22 +31,22 @@ public class SetupController {
     public String runMigrations(RedirectAttributes ra) {
         try {
             setupService.runMigrations();
-            ra.addFlashAttribute("success", "Base de datos actualizada correctamente.");
+            ra.addFlashAttribute(SUCCESS_ATTR, "Base de datos actualizada correctamente.");
         } catch (Exception e) {
-            ra.addFlashAttribute("error", "Error al migrar: " + e.getMessage());
+            ra.addFlashAttribute(ERROR_ATTR, "Error al migrar: " + e.getMessage());
         }
-        return "redirect:/setup";
+        return REDIRECT_SETUP;
     }
 
     @PostMapping("/repair")
     public String repairMigrations(RedirectAttributes ra) {
         try {
             setupService.repairSchemaHistory();
-            ra.addFlashAttribute("success", "Histórico de migraciones reparado. Vuelve a intentar aplicar los cambios.");
+            ra.addFlashAttribute(SUCCESS_ATTR, "Histórico de migraciones reparado. Vuelve a intentar aplicar los cambios.");
         } catch (Exception e) {
-            ra.addFlashAttribute("error", "Error al reparar: " + e.getMessage());
+            ra.addFlashAttribute(ERROR_ATTR, "Error al reparar: " + e.getMessage());
         }
-        return "redirect:/setup";
+        return REDIRECT_SETUP;
     }
 
     @PostMapping("/admin")
@@ -51,11 +55,11 @@ public class SetupController {
                               RedirectAttributes ra) {
         try {
             userService.createUser(username, password);
-            ra.addFlashAttribute("success", "Usuario admin creado. Ya puedes iniciar sesión.");
+            ra.addFlashAttribute(SUCCESS_ATTR, "Usuario admin creado. Ya puedes iniciar sesión.");
             return "redirect:/login";
         } catch (Exception e) {
-            ra.addFlashAttribute("error", e.getMessage());
-            return "redirect:/setup";
+            ra.addFlashAttribute(ERROR_ATTR, e.getMessage());
+            return REDIRECT_SETUP;
         }
     }
 }

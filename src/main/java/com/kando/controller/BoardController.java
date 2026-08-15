@@ -276,8 +276,7 @@ public class BoardController {
                                            @Valid @RequestBody TaskRequest req,
                                            Authentication authentication) {
         KandoUser user = userService.getUserOrThrow(authentication.getName());
-        return ResponseEntity.ok(boardService.updateTask(id, req.getTitle(), req.getNotes(),
-            req.getDueDate(), req.getLabelId(), req.getColumnId(), req.getParentTaskId(), user));
+        return ResponseEntity.ok(boardService.updateTask(id, req, user));
     }
 
     /**

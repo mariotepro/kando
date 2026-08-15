@@ -16,6 +16,10 @@ import java.sql.Statement;
  * column constraint. Looking it up via {@code information_schema}, which both databases expose
  * identically, avoids hardcoding either name.
  */
+// Class name must match Flyway's V{version}__{description} convention, which it parses this
+// name against to resolve the migration's version and description — a PascalCase name would
+// break migration discovery, so the S101 naming-convention warning doesn't apply here.
+@SuppressWarnings("java:S101")
 public class V9__drop_legacy_label_name_unique_constraint extends BaseJavaMigration {
 
     @Override
@@ -31,7 +35,10 @@ public class V9__drop_legacy_label_name_unique_constraint extends BaseJavaMigrat
             }
         }
 
-        if (constraintName == null) {
+        // constraintName comes from information_schema (database metadata, not user input), but
+        // identifiers can't be bound as PreparedStatement parameters, so it's interpolated below —
+        // validate it looks like a plain SQL identifier first as defense in depth.
+        if (constraintName == null || !constraintName.matches("[A-Za-z0-9_]+")) {
             return;
         }
 

@@ -1,5 +1,6 @@
 package com.kando.service;
 
+import com.kando.dto.TaskRequest;
 import com.kando.model.Board;
 import com.kando.model.BoardColumn;
 import com.kando.model.KandoUser;
@@ -14,6 +15,7 @@ import com.kando.repository.TaskRepository;
 import com.kando.util.LevenshteinUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,8 +58,8 @@ public class BoardService {
     private static final String  LABEL_NOT_FOUND  = "Label not found: ";
     private static final String  BOARD_NAME_REQUIRED = "A board name is required";
     private static final String  DEFAULT_BOARD_NAME = "Mi tablero";
-    private static final List<String> DEFAULT_COLUMN_NAMES = List.of("Planificado", "Hoy", "En espera", "Hecho");
     private static final String  DONE_COLUMN_NAME = "Hecho";
+    private static final List<String> DEFAULT_COLUMN_NAMES = List.of("Planificado", "Hoy", "En espera", DONE_COLUMN_NAME);
     private static final String  HISTORY_COLUMN_NAME_KEY = "columnName";
     private static final String  HISTORY_MOVED_AT_KEY = "movedAt";
     private static final String  HISTORY_DONE_KEY = "done";
@@ -71,6 +73,13 @@ public class BoardService {
     private final LabelService labelService;
     private final TaskColumnHistoryRepository historyRepository;
     private final ColumnHistoryService columnHistoryService;
+
+    // Self-injected proxy: methods below call other @Transactional methods of this same class
+    // (e.g. seedDefaultColumns -> createColumn), and a plain 'this' call bypasses Spring's
+    // transactional proxy entirely. ObjectProvider defers the lookup until first use, so it
+    // doesn't trip Spring's circular-dependency check the way a directly injected self-reference
+    // does (this bean depending on itself while it's still being constructed).
+    private final ObjectProvider<BoardService> self;
 
     // ── Boards ───────────────────────────────────────────────────────────────
 
@@ -151,7 +160,7 @@ public class BoardService {
      */
     private void seedDefaultColumns(Board board) {
         for (String columnName : DEFAULT_COLUMN_NAMES) {
-            BoardColumn column = createColumn(columnName, board.getId(), board.getOwner());
+            BoardColumn column = self.getObject().createColumn(columnName, board.getId(), board.getOwner());
             if (DONE_COLUMN_NAME.equals(columnName)) {
                 column.setDone(true);
                 columnRepository.save(column);
@@ -225,7 +234,7 @@ public class BoardService {
             throw new IllegalArgumentException("No puedes eliminar tu único tablero");
         }
         columnRepository.findByBoardIdOrderByPositionAsc(boardId)
-            .forEach(column -> deleteColumn(column.getId(), owner));
+            .forEach(column -> self.getObject().deleteColumn(column.getId(), owner));
         boardRepository.delete(board);
     }
 
@@ -410,24 +419,18 @@ public class BoardService {
      * Updates a task and optionally relocates it after column or parent changes.
      *
      * @param id task identifier
-     * @param title task title
-     * @param notes task notes
-     * @param dueDate optional due date
-     * @param labelId optional single label identifier
-     * @param columnId requested destination column identifier
-     * @param parentTaskId optional parent task identifier
+     * @param req task fields submitted from the board modal
      * @param owner authenticated user, must own the task's board
      * @return updated task
      */
     @Transactional
-    public Task updateTask(Long id,
-                           String title,
-                           String notes,
-                           LocalDate dueDate,
-                           Long labelId,
-                           Long columnId,
-                           Long parentTaskId,
-                           KandoUser owner) {
+    public Task updateTask(Long id, TaskRequest req, KandoUser owner) {
+        String title = req.getTitle();
+        String notes = req.getNotes();
+        LocalDate dueDate = req.getDueDate();
+        Long labelId = req.getLabelId();
+        Long columnId = req.getColumnId();
+        Long parentTaskId = req.getParentTaskId();
         log.debug("Updating task {} with column {}, parent {} and label {}", id, columnId, parentTaskId, labelId);
         Task task = requireOwnedTask(id, owner);
         Long boardId = task.getColumn().getBoard().getId();

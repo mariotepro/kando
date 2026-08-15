@@ -1,5 +1,6 @@
 package com.kando.service;
 
+import com.kando.dto.TaskRequest;
 import com.kando.model.Board;
 import com.kando.model.BoardColumn;
 import com.kando.model.KandoUser;
@@ -18,7 +19,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -50,6 +51,7 @@ class BoardServiceTest {
     @Mock LabelService labelService;
     @Mock com.kando.repository.TaskColumnHistoryRepository historyRepository;
     @Mock ColumnHistoryService columnHistoryService;
+    @Mock org.springframework.beans.factory.ObjectProvider<BoardService> self;
 
     @InjectMocks
     BoardService boardService;
@@ -63,6 +65,7 @@ class BoardServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(self.getObject()).thenReturn(boardService);
         owner = user(1L);
         otherOwner = user(2L);
         board = board(BOARD_ID, owner, 0);
@@ -428,18 +431,20 @@ class BoardServiceTest {
         BoardColumn foreignColumn = column(3L, "Ajena", 0);
         foreignColumn.setBoard(board(200L, otherOwner, 0));
         when(columnRepository.findAllById(anyList())).thenReturn(List.of(todayColumn, foreignColumn));
+        List<Long> orderedIds = List.of(1L, 3L);
 
         assertThrows(IllegalArgumentException.class,
-            () -> boardService.reorderColumns(List.of(1L, 3L), owner));
+            () -> boardService.reorderColumns(orderedIds, owner));
         verify(columnRepository, never()).saveAll(anyList());
     }
 
     @Test
     void reorderColumns_containsUnknownColumnId_throws() {
         when(columnRepository.findAllById(anyList())).thenReturn(List.of(todayColumn));
+        List<Long> orderedIds = List.of(1L, 999L);
 
         assertThrows(IllegalArgumentException.class,
-            () -> boardService.reorderColumns(List.of(1L, 999L), owner));
+            () -> boardService.reorderColumns(orderedIds, owner));
         verify(columnRepository, never()).saveAll(anyList());
     }
 
@@ -529,8 +534,8 @@ class BoardServiceTest {
         when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(task));
         when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Task updated = boardService.updateTask(5L, "Nuevo título", "Mis notas",
-            LocalDate.of(2026, 12, 31), 10L, 1L, null, owner);
+        Task updated = boardService.updateTask(5L,
+            req("Nuevo título", "Mis notas", LocalDate.of(2026, 12, 31), 10L, 1L, null), owner);
 
         assertThat(updated.getTitle()).isEqualTo("Nuevo título");
         assertThat(updated.getNotes()).isEqualTo("Mis notas");
@@ -543,8 +548,8 @@ class BoardServiceTest {
         Task task = task(5L, "Viejo", todayColumn, 0);
         when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
 
-        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L,
-            "T", null, null, null, 1L, null, otherOwner));
+        TaskRequest request = req("T", null, null, null, 1L, null);
+        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L, request, otherOwner));
     }
 
     @Test
@@ -560,7 +565,7 @@ class BoardServiceTest {
         when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Task updated = boardService.updateTask(5L, "Nueva", null, null, null, 1L, 7L, owner);
+        Task updated = boardService.updateTask(5L, req("Nueva", null, null, null, 1L, 7L), owner);
 
         assertThat(updated.getParentTask()).isEqualTo(parentTask);
         assertThat(updated.getColumn()).isEqualTo(doneColumn);
@@ -576,7 +581,7 @@ class BoardServiceTest {
         when(taskRepository.findByColumnIdOrderByPositionAsc(1L)).thenReturn(List.of(task));
         when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Task updated = boardService.updateTask(5L, "T", null, null, null, 1L, null, owner);
+        Task updated = boardService.updateTask(5L, req("T", null, null, null, 1L, null), owner);
 
         assertThat(updated.getLabels()).isEmpty();
     }
@@ -588,8 +593,8 @@ class BoardServiceTest {
         when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
         when(labelRepository.findById(88L)).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L,
-            "T", null, null, 88L, 1L, null, owner));
+        TaskRequest request = req("T", null, null, 88L, 1L, null);
+        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L, request, owner));
     }
 
     @Test
@@ -602,8 +607,8 @@ class BoardServiceTest {
         when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
         when(labelRepository.findById(11L)).thenReturn(Optional.of(foreignLabel));
 
-        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L,
-            "T", null, null, 11L, 1L, null, owner));
+        TaskRequest request = req("T", null, null, 11L, 1L, null);
+        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L, request, owner));
     }
 
     @Test
@@ -612,8 +617,8 @@ class BoardServiceTest {
 
         when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
 
-        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L,
-            "T", null, null, null, 1L, 5L, owner));
+        TaskRequest request = req("T", null, null, null, 1L, 5L);
+        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L, request, owner));
     }
 
     @Test
@@ -626,8 +631,8 @@ class BoardServiceTest {
         when(taskRepository.findById(5L)).thenReturn(Optional.of(task));
         when(taskRepository.findById(7L)).thenReturn(Optional.of(parentTask));
 
-        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L,
-            "Hijo", null, null, null, 1L, 7L, owner));
+        TaskRequest request = req("Hijo", null, null, null, 1L, 7L);
+        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L, request, owner));
     }
 
     @Test
@@ -645,8 +650,8 @@ class BoardServiceTest {
         when(taskRepository.findById(7L)).thenReturn(Optional.of(parentTask));
         when(labelRepository.findById(10L)).thenReturn(Optional.of(urgentLabel));
 
-        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L,
-            "Hijo", null, null, 10L, 1L, 7L, owner));
+        TaskRequest request = req("Hijo", null, null, 10L, 1L, 7L);
+        assertThrows(IllegalArgumentException.class, () -> boardService.updateTask(5L, request, owner));
     }
 
     @Test
@@ -663,7 +668,7 @@ class BoardServiceTest {
         when(taskRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Task updated = boardService.updateTask(5L, "Hijo", null, null, 10L, 1L, 7L, owner);
+        Task updated = boardService.updateTask(5L, req("Hijo", null, null, 10L, 1L, 7L), owner);
 
         assertThat(updated.getParentTask()).isEqualTo(parentTask);
     }
@@ -693,7 +698,7 @@ class BoardServiceTest {
         when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         // Invoke method
-        Task updated = boardService.updateTask(5L, "Padre", null, null, 21L, 1L, null, owner);
+        Task updated = boardService.updateTask(5L, req("Padre", null, null, 21L, 1L, null), owner);
 
         // Asserts
         assertThat(updated.getLabels()).containsExactly(followUpLabel);
@@ -975,9 +980,9 @@ class BoardServiceTest {
         List<java.util.Map<String, String>> history = boardService.findTaskHistory(5L, owner);
 
         assertThat(history).singleElement().satisfies(row -> {
-            assertThat(row.get("columnName")).isEqualTo("Hoy");
-            assertThat(row.get("eventType")).isEqualTo("CREATED");
-            assertThat(row.get("done")).isEqualTo("false");
+            assertThat(row).containsEntry("columnName", "Hoy");
+            assertThat(row).containsEntry("eventType", "CREATED");
+            assertThat(row).containsEntry("done", "false");
         });
     }
 
@@ -1129,12 +1134,23 @@ class BoardServiceTest {
     }
 
     private Board board(Long id, KandoUser owner, int position) {
-        Board board = new Board();
-        board.setId(id);
-        board.setName("Board " + id);
-        board.setOwner(owner);
-        board.setPosition(position);
-        return board;
+        Board result = new Board();
+        result.setId(id);
+        result.setName("Board " + id);
+        result.setOwner(owner);
+        result.setPosition(position);
+        return result;
+    }
+
+    private TaskRequest req(String title, String notes, LocalDate dueDate, Long labelId, Long columnId, Long parentTaskId) {
+        TaskRequest request = new TaskRequest();
+        request.setTitle(title);
+        request.setNotes(notes);
+        request.setDueDate(dueDate);
+        request.setLabelId(labelId);
+        request.setColumnId(columnId);
+        request.setParentTaskId(parentTaskId);
+        return request;
     }
 
     private KandoUser user(Long id) {
