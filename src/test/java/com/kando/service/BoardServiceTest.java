@@ -37,6 +37,11 @@ import static org.mockito.Mockito.when;
 class BoardServiceTest {
 
     private static final Long BOARD_ID = 100L;
+    private static final Instant STALE_DONE_CUTOFF = Instant.parse("2026-06-01T00:00:00Z");
+    private static final Instant FRESH_DONE_INSTANT = Instant.parse("2026-06-02T00:00:00Z");
+    private static final Instant STALE_DONE_INSTANT = Instant.parse("2026-05-24T00:00:00Z");
+    private static final Instant OLDER_STALE_DONE_INSTANT = Instant.parse("2026-05-22T00:00:00Z");
+    private static final Instant RECENT_DONE_INSTANT = Instant.parse("2026-06-03T00:00:00Z");
 
     @Mock BoardColumnRepository columnRepository;
     @Mock BoardRepository boardRepository;
