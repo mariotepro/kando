@@ -30,10 +30,10 @@ class ExportServiceTest {
     @Test
     void exportAsMarkdown_emptyBoard_showsEmptyStatePhrases() {
         BoardColumn column = column(1L, "Hoy");
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(column));
+        when(columnRepository.findByBoardIdOrderByPositionAsc(1L)).thenReturn(List.of(column));
         when(taskRepository.findByColumnIdForExport(1L)).thenReturn(List.of());
 
-        String markdown = exportService.exportAsMarkdown();
+        String markdown = exportService.exportAsMarkdown(1L);
 
         assertThat(markdown)
             .contains("## Hoy")
@@ -44,10 +44,10 @@ class ExportServiceTest {
     void exportAsMarkdown_taskWithTitleOnly_rendersCheckbox() {
         BoardColumn column = column(1L, "Planificado");
         Task task = task(1L, "Preparar demo", null, null);
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(column));
+        when(columnRepository.findByBoardIdOrderByPositionAsc(1L)).thenReturn(List.of(column));
         when(taskRepository.findByColumnIdForExport(1L)).thenReturn(List.of(task));
 
-        String markdown = exportService.exportAsMarkdown();
+        String markdown = exportService.exportAsMarkdown(1L);
 
         assertThat(markdown).contains("- [ ] **Preparar demo**");
     }
@@ -56,10 +56,10 @@ class ExportServiceTest {
     void exportAsMarkdown_taskWithDueDate_includesDate() {
         BoardColumn column = column(1L, "Hoy");
         Task task = task(1L, "Revisión", null, LocalDate.of(2026, 7, 15));
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(column));
+        when(columnRepository.findByBoardIdOrderByPositionAsc(1L)).thenReturn(List.of(column));
         when(taskRepository.findByColumnIdForExport(1L)).thenReturn(List.of(task));
 
-        String markdown = exportService.exportAsMarkdown();
+        String markdown = exportService.exportAsMarkdown(1L);
 
         assertThat(markdown).contains("2026-07-15");
     }
@@ -73,10 +73,10 @@ class ExportServiceTest {
 
         Task task = task(1L, "Fix bug", null, null);
         task.getLabels().add(label);
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(column));
+        when(columnRepository.findByBoardIdOrderByPositionAsc(1L)).thenReturn(List.of(column));
         when(taskRepository.findByColumnIdForExport(1L)).thenReturn(List.of(task));
 
-        String markdown = exportService.exportAsMarkdown();
+        String markdown = exportService.exportAsMarkdown(1L);
 
         assertThat(markdown).contains("`urgente`");
     }
@@ -85,10 +85,10 @@ class ExportServiceTest {
     void exportAsMarkdown_taskWithNotes_rendersBlockquote() {
         BoardColumn column = column(1L, "En espera");
         Task task = task(1L, "Analizar", "Revisar requisitos\nVer documentación", null);
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(column));
+        when(columnRepository.findByBoardIdOrderByPositionAsc(1L)).thenReturn(List.of(column));
         when(taskRepository.findByColumnIdForExport(1L)).thenReturn(List.of(task));
 
-        String markdown = exportService.exportAsMarkdown();
+        String markdown = exportService.exportAsMarkdown(1L);
 
         assertThat(markdown)
             .contains("  > Revisar requisitos")
@@ -99,11 +99,11 @@ class ExportServiceTest {
     void exportAsMarkdown_multipleColumns_allIncluded() {
         BoardColumn c1 = column(1L, "Hoy");
         BoardColumn c2 = column(2L, "Hecho");
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(c1, c2));
+        when(columnRepository.findByBoardIdOrderByPositionAsc(1L)).thenReturn(List.of(c1, c2));
         when(taskRepository.findByColumnIdForExport(1L)).thenReturn(List.of());
         when(taskRepository.findByColumnIdForExport(2L)).thenReturn(List.of());
 
-        String markdown = exportService.exportAsMarkdown();
+        String markdown = exportService.exportAsMarkdown(1L);
 
         assertThat(markdown)
             .contains("## Hoy")
@@ -114,10 +114,10 @@ class ExportServiceTest {
     void exportAsMarkdown_titleWithPipe_escapesIt() {
         BoardColumn column = column(1L, "Hoy");
         Task task = task(1L, "A | B", null, null);
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(column));
+        when(columnRepository.findByBoardIdOrderByPositionAsc(1L)).thenReturn(List.of(column));
         when(taskRepository.findByColumnIdForExport(1L)).thenReturn(List.of(task));
 
-        String markdown = exportService.exportAsMarkdown();
+        String markdown = exportService.exportAsMarkdown(1L);
 
         assertThat(markdown).contains("A \\| B");
     }
@@ -128,10 +128,10 @@ class ExportServiceTest {
         Task parent = task(1L, "Padre", null, null);
         Task child = task(2L, "Hija", null, null);
         child.setParentTask(parent);
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(column));
+        when(columnRepository.findByBoardIdOrderByPositionAsc(1L)).thenReturn(List.of(column));
         when(taskRepository.findByColumnIdForExport(1L)).thenReturn(List.of(parent, child));
 
-        String markdown = exportService.exportAsMarkdown();
+        String markdown = exportService.exportAsMarkdown(1L);
 
         assertThat(markdown)
             .contains("- [ ] **Padre**")
@@ -141,10 +141,10 @@ class ExportServiceTest {
     @Test
     void exportAsMarkdown_repositoryFailure_isPropagated() {
         BoardColumn column = column(1L, "Hoy");
-        when(columnRepository.findAllByOrderByPositionAsc()).thenReturn(List.of(column));
+        when(columnRepository.findByBoardIdOrderByPositionAsc(1L)).thenReturn(List.of(column));
         when(taskRepository.findByColumnIdForExport(1L)).thenThrow(new IllegalStateException("boom"));
 
-        assertThatThrownBy(() -> exportService.exportAsMarkdown())
+        assertThatThrownBy(() -> exportService.exportAsMarkdown(1L))
             .isInstanceOf(IllegalStateException.class)
             .hasMessage("boom");
     }

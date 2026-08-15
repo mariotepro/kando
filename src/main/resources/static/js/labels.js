@@ -129,6 +129,63 @@ function makeCustomSwatch(color, onSelect) {
   return wrapper;
 }
 
+/* ── Generic confirm/alert modals (reemplazan confirm()/alert()) ────────────── */
+let _confirmModalResolve = null;
+
+function showConfirmModal(title, message, confirmLabel = 'Eliminar') {
+  document.getElementById('confirmModalTitle').textContent = title;
+  document.getElementById('confirmModalCopy').textContent = message;
+  const button = document.getElementById('confirmModalButton');
+  button.textContent = confirmLabel;
+  button.disabled = false;
+  document.getElementById('confirmModal').style.display = 'flex';
+  setTimeout(() => button.focus(), 50);
+  return new Promise(resolve => { _confirmModalResolve = resolve; });
+}
+
+function confirmConfirmModal() { closeConfirmModal(true); }
+function cancelConfirmModal() { closeConfirmModal(false); }
+
+function closeConfirmModal(result) {
+  document.getElementById('confirmModal').style.display = 'none';
+  if (_confirmModalResolve) { _confirmModalResolve(result); _confirmModalResolve = null; }
+}
+
+function cancelConfirmModalOutside(event) {
+  if (event.target === document.getElementById('confirmModal')) cancelConfirmModal();
+}
+
+let _alertModalResolve = null;
+
+function showAlertModal(message, title = 'Aviso') {
+  document.getElementById('alertModalTitle').textContent = title;
+  document.getElementById('alertModalCopy').textContent = message;
+  document.getElementById('alertModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('alertModalButton').focus(), 50);
+  return new Promise(resolve => { _alertModalResolve = resolve; });
+}
+
+function closeAlertModal() {
+  document.getElementById('alertModal').style.display = 'none';
+  if (_alertModalResolve) { _alertModalResolve(); _alertModalResolve = null; }
+}
+
+function closeAlertModalOutside(event) {
+  if (event.target === document.getElementById('alertModal')) closeAlertModal();
+}
+
+document.addEventListener('keydown', e => {
+  const confirmModal = document.getElementById('confirmModal');
+  if (confirmModal && confirmModal.style.display !== 'none') {
+    if (e.key === 'Enter') confirmConfirmModal();
+    if (e.key === 'Escape') cancelConfirmModal();
+  }
+  const alertModal = document.getElementById('alertModal');
+  if (alertModal && alertModal.style.display !== 'none' && (e.key === 'Enter' || e.key === 'Escape')) {
+    closeAlertModal();
+  }
+});
+
 /* ── Existing label rows ─────────────────────────────────────────────────── */
 function bindLabelRow(row) {
   const labelId = parseInt(row.dataset.labelId, 10);
@@ -159,10 +216,11 @@ function bindLabelRow(row) {
     nameInput.dataset.saved = name;
   });
 
-  deleteBtn.addEventListener('click', () => {
-    if (!confirm('¿Eliminar esta etiqueta? Se quitará de todas las tareas que la usen.')) return;
+  deleteBtn.addEventListener('click', async () => {
+    const confirmed = await showConfirmModal('Eliminar etiqueta', '¿Eliminar esta etiqueta? Se quitará de todas las tareas que la usen.');
+    if (!confirmed) return;
     fetch(`/api/labels/${labelId}`, { method: 'DELETE' })
-      .then(r => r.ok ? location.reload() : alert('Error al eliminar'));
+      .then(r => r.ok ? location.reload() : showAlertModal('Error al eliminar'));
   });
 }
 
@@ -172,7 +230,7 @@ function saveLabel(id, name, color) {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, color })
-  }).then(r => { if (!r.ok) r.json().then(e => alert(e.message || 'Error al guardar')); });
+  }).then(r => { if (!r.ok) r.json().then(e => showAlertModal(e.message || 'Error al guardar')); });
 }
 
 /* ── New label row ───────────────────────────────────────────────────────── */
@@ -203,8 +261,8 @@ function createLabel() {
   fetch('/api/labels', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, color })
-  }).then(r => r.ok ? location.reload() : r.json().then(e => alert(e.message || 'Error')));
+    body: JSON.stringify({ name, color, boardId: window.KANDO.activeBoardId })
+  }).then(r => r.ok ? location.reload() : r.json().then(e => showAlertModal(e.message || 'Error')));
 }
 
 /* ── Init ────────────────────────────────────────────────────────────────── */
