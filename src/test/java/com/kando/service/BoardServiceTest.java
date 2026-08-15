@@ -993,7 +993,7 @@ class BoardServiceTest {
     @Test
     void findStaleDoneTaskIds_noTasksInDoneColumns_returnsEmpty() {
         // Data
-        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
+        Instant cutoff = STALE_DONE_CUTOFF;
 
         // Invoke method
         Set<Long> result = boardService.findStaleDoneTaskIds(List.of(todayColumn), cutoff);
@@ -1007,7 +1007,7 @@ class BoardServiceTest {
     void findStaleDoneTaskIds_doneColumnWithNoTasks_returnsEmpty() {
         // Data
         doneColumn.setDone(true);
-        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
+        Instant cutoff = STALE_DONE_CUTOFF;
 
         // Invoke method
         Set<Long> result = boardService.findStaleDoneTaskIds(List.of(doneColumn), cutoff);
@@ -1023,8 +1023,8 @@ class BoardServiceTest {
         doneColumn.setDone(true);
         Task freshTask = task(10L, "Fresca", doneColumn, 0);
         doneColumn.getTasks().add(freshTask);
-        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
-        Instant freshMovedAt = Instant.now();
+        Instant cutoff = STALE_DONE_CUTOFF;
+        Instant freshMovedAt = FRESH_DONE_INSTANT;
 
         // Mock methods
         List<Object[]> historyRows = historyRows(10L, freshMovedAt);
@@ -1043,8 +1043,8 @@ class BoardServiceTest {
         doneColumn.setDone(true);
         Task staleTask = task(10L, "Vieja", doneColumn, 0);
         doneColumn.getTasks().add(staleTask);
-        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
-        Instant staleMovedAt = Instant.now().minus(8, ChronoUnit.DAYS);
+        Instant cutoff = STALE_DONE_CUTOFF;
+        Instant staleMovedAt = STALE_DONE_INSTANT;
 
         // Mock methods
         List<Object[]> historyRows = historyRows(10L, staleMovedAt);
@@ -1066,8 +1066,8 @@ class BoardServiceTest {
         subtask.setParentTask(staleParent);
         doneColumn.getTasks().add(staleParent);
         doneColumn.getTasks().add(subtask);
-        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
-        Instant staleMovedAt = Instant.now().minus(8, ChronoUnit.DAYS);
+        Instant cutoff = STALE_DONE_CUTOFF;
+        Instant staleMovedAt = STALE_DONE_INSTANT;
 
         // Mock methods
         List<Object[]> historyRows = historyRows(10L, staleMovedAt);
@@ -1088,9 +1088,9 @@ class BoardServiceTest {
         Task freshTask = task(11L, "Fresca", doneColumn, 1);
         doneColumn.getTasks().add(staleTask);
         doneColumn.getTasks().add(freshTask);
-        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
-        Instant staleMovedAt = Instant.now().minus(10, ChronoUnit.DAYS);
-        Instant freshMovedAt = Instant.now().minus(2, ChronoUnit.DAYS);
+        Instant cutoff = STALE_DONE_CUTOFF;
+        Instant staleMovedAt = OLDER_STALE_DONE_INSTANT;
+        Instant freshMovedAt = RECENT_DONE_INSTANT;
 
         // Mock methods
         List<Object[]> historyRows = new ArrayList<>();
@@ -1111,7 +1111,8 @@ class BoardServiceTest {
         doneColumn.setDone(true);
         Task task = task(10L, "Tarea", doneColumn, 0);
         doneColumn.getTasks().add(task);
-        Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
+        Instant cutoff = STALE_DONE_CUTOFF;
+        List<BoardColumn> doneColumns = List.of(doneColumn);
 
         // Mock methods
         when(historyRepository.findLatestDoneInstantsByTaskIds(anyList()))
@@ -1119,7 +1120,7 @@ class BoardServiceTest {
 
         // Invoke method + Asserts
         assertThrows(RuntimeException.class,
-            () -> boardService.findStaleDoneTaskIds(List.of(doneColumn), cutoff));
+            () -> boardService.findStaleDoneTaskIds(doneColumns, cutoff));
     }
 
     private Board board(Long id, KandoUser owner, int position) {

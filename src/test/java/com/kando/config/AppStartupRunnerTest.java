@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.boot.test.system.CapturedOutput;
@@ -64,7 +65,7 @@ class AppStartupRunnerTest {
     @Test
     void run_whenDatabaseIsEmpty_logsVersionAndRunsMigrations(CapturedOutput output) {
         // Data
-        AppStartupRunner runner = new AppStartupRunner(setupService, buildProperties);
+        AppStartupRunner runner = new AppStartupRunner(setupService, buildPropertiesProvider(buildProperties));
 
         // Mock methods
         when(setupService.isDatabaseEmpty()).thenReturn(true);
@@ -73,8 +74,9 @@ class AppStartupRunnerTest {
         runner.run(args);
 
         // Asserts
-        assertThat(output).contains(STARTUP_LOG_PREFIX + APP_VERSION + ".");
-        assertThat(output).contains(FRESH_DATABASE_LOG);
+        assertThat(output)
+                .contains(STARTUP_LOG_PREFIX + APP_VERSION + ".")
+                .contains(FRESH_DATABASE_LOG);
         verify(setupService).isDatabaseEmpty();
         verify(setupService).runMigrations();
         verify(setupService, never()).hasPendingMigrations();
@@ -88,7 +90,7 @@ class AppStartupRunnerTest {
     @Test
     void run_whenPendingMigrationsExist_logsWarning(CapturedOutput output) {
         // Data
-        AppStartupRunner runner = new AppStartupRunner(setupService, buildProperties);
+        AppStartupRunner runner = new AppStartupRunner(setupService, buildPropertiesProvider(buildProperties));
 
         // Mock methods
         when(setupService.isDatabaseEmpty()).thenReturn(false);
@@ -98,8 +100,9 @@ class AppStartupRunnerTest {
         runner.run(args);
 
         // Asserts
-        assertThat(output).contains(STARTUP_LOG_PREFIX + APP_VERSION + ".");
-        assertThat(output).contains(PENDING_MIGRATIONS_LOG);
+        assertThat(output)
+                .contains(STARTUP_LOG_PREFIX + APP_VERSION + ".")
+                .contains(PENDING_MIGRATIONS_LOG);
         verify(setupService).isDatabaseEmpty();
         verify(setupService).hasPendingMigrations();
         verify(setupService, never()).runMigrations();
@@ -113,7 +116,7 @@ class AppStartupRunnerTest {
     @Test
     void run_whenDatabaseIsUpToDate_logsStatus(CapturedOutput output) {
         // Data
-        AppStartupRunner runner = new AppStartupRunner(setupService, buildProperties);
+        AppStartupRunner runner = new AppStartupRunner(setupService, buildPropertiesProvider(buildProperties));
 
         // Mock methods
         when(setupService.isDatabaseEmpty()).thenReturn(false);
@@ -123,8 +126,9 @@ class AppStartupRunnerTest {
         runner.run(args);
 
         // Asserts
-        assertThat(output).contains(STARTUP_LOG_PREFIX + APP_VERSION + ".");
-        assertThat(output).contains(DATABASE_UP_TO_DATE_LOG);
+        assertThat(output)
+                .contains(STARTUP_LOG_PREFIX + APP_VERSION + ".")
+                .contains(DATABASE_UP_TO_DATE_LOG);
         verify(setupService).isDatabaseEmpty();
         verify(setupService).hasPendingMigrations();
         verify(setupService, never()).runMigrations();
@@ -138,7 +142,7 @@ class AppStartupRunnerTest {
     @Test
     void run_whenDatabaseCheckFails_logsFallbackVersionAndPropagatesException(CapturedOutput output) {
         // Data
-        AppStartupRunner runner = new AppStartupRunner(setupService, null);
+        AppStartupRunner runner = new AppStartupRunner(setupService, buildPropertiesProvider(null));
 
         // Mock methods
         when(setupService.isDatabaseEmpty()).thenThrow(new IllegalStateException(STARTUP_FAILURE_MESSAGE));
@@ -153,5 +157,20 @@ class AppStartupRunnerTest {
         verify(setupService).isDatabaseEmpty();
         verify(setupService, never()).hasPendingMigrations();
         verify(setupService, never()).runMigrations();
+    }
+
+    /**
+     * Creates an optional build properties provider for constructor injection tests.
+     *
+     * @param properties build metadata to expose, or {@code null} when it is unavailable
+     * @return provider that returns the supplied metadata
+     */
+    private ObjectProvider<BuildProperties> buildPropertiesProvider(BuildProperties properties) {
+        return new ObjectProvider<>() {
+            @Override
+            public BuildProperties getIfAvailable() {
+                return properties;
+            }
+        };
     }
 }
