@@ -73,7 +73,8 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 ### Subtareas
 
 - Una tarea puede tener tareas hijas (subtareas); solo **un nivel de profundidad** (sin sub-subtareas)
-- **Regla de etiqueta**: una subtarea **debe tener la misma etiqueta que su tarea padre**. El backend lo valida y el frontend solo muestra padres compatibles en el picker y bloquea el drag-and-drop entre tareas de etiquetas distintas
+- **Regla de etiqueta**: una subtarea **debe tener la misma etiqueta que su tarea padre** (incluido "ninguna etiqueta" en ambos lados; no vale que solo uno de los dos tenga etiqueta). El backend lo valida (`BoardService.resolveParentTask`) y el frontend solo muestra padres compatibles en el picker y bloquea tanto el drag-and-drop como el swipe entre tareas de etiquetas distintas
+- **En el modal de tarea, el picker de etiqueta se bloquea (solo lectura) mientras la tarea sea subtarea**: hereda la etiqueta de su padre y no se puede tocar desde ahí; hay que desanidarla primero para poder cambiarle la etiqueta
 - Las subtareas aparecen sangradas bajo su padre en la columna
 - La sangría es la única marca visual de subtarea; no se muestra chip/badge específico
 - La altura visual de la subtarea depende del título; mantiene el mismo aire arriba y abajo sin reservar hueco para una etiqueta inexistente
@@ -96,6 +97,8 @@ Aplicación de tablero Kanban personal. Una sola persona la usa (hay login pero 
 - Implementado con SortableJS
 - En dispositivos táctiles, el drag usa una pulsación breve antes de iniciar el arrastre para evitar conflictos con el scroll normal
 - SortableJS con `forceFallback: true` en ambas instancias (tareas y columnas): fuerza el drag simulado por JS (con las clases `sortable-ghost`/`sortable-chosen` ya con estilo propio) en vez del drag-and-drop nativo del navegador, que en Chrome/escritorio dejaba ver su rectángulo azul de arrastre por defecto, ajeno al tema de Kando
+- La detección de intención de anidado (`updateNestIntent`) escucha `pointermove` (con `touchmove` como respaldo) en `document` durante el arrastre, no el evento nativo `dragover`: con `forceFallback` activo, Sortable emula el arrastre con eventos de puntero/touch y ya no dispara `dragover`, así que un listener basado en `dragover` nunca se ejecuta en escritorio (regresión real detectada y corregida). Probado también enganchar la detección al propio callback `onMove` de Sortable en vez de un listener aparte, pero `onMove` solo se dispara cuando Sortable está evaluando un cambio de orden en el DOM — puede quedarse en silencio justo cuando la tarjeta ya se ha asentado en una fila y el usuario solo empuja a la derecha para anidarla, que es exactamente el gesto final del anidado. `pointermove` sí llega en cada movimiento real del puntero, así que es la única fuente fiable
+- Si el `move` falla en el backend (por ejemplo, etiqueta incompatible detectada solo en el servidor), se muestra el motivo con el modal de aviso antes de recargar la página, en vez de recargar en silencio sin explicación
 
 ### Ordenación por etiqueta
 

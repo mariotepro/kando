@@ -2352,6 +2352,21 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(203, 166, 247, .12);
 }
 
+.cpicker-locked .cpicker-trigger {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
+.cpicker-locked .cpicker-trigger:hover {
+  border-color: rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .025);
+}
+
+.cpicker-locked .cpicker-caret,
+.cpicker-locked .cpicker-chip-remove {
+  display: none;
+}
+
 .cpicker-chips {
   min-width: 0;
   flex: 1;

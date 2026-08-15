@@ -9,6 +9,7 @@ let pendingDeleteTaskId = null;
 let columnSortable = null;
 let dragState = null;
 let dragPointerHandler = null;
+let dragNestRafId = null;
 let mobileTaskSwipeState = null;
 let columnResizeState = null;
 let boardTaskDragUnlockTimer = null;
@@ -235,8 +236,10 @@ function initTaskSortables() {
         }).then(() => {
           clearColumnSortState(sourceColId);
           clearColumnSortState(targetColId);
-        }).catch(() => location.reload())
-          .finally(() => {
+        }).catch(async error => {
+          await showAlertModal(await extractApiErrorMessage(error, 'No he podido mover la tarea.'));
+          location.reload();
+        }).finally(() => {
             clearTaskDropTargets();
             dragState = null;
           });
@@ -287,20 +290,46 @@ function allowTaskMove(originalEvent) {
 
 // Nesting is driven by the horizontal axis (Notion/outliner style): reordering stays vertical,
 // and pushing the dragged card to the right turns it into a subtask of the card directly above.
+// Tracked from real 'pointermove' events on the document rather than Sortable's own onMove:
+// onMove only fires when Sortable is about to change the DOM order, so it can go quiet once the
+// dragged card has settled into a slot — exactly when a user nudges right afterwards to nest it.
+// 'pointermove' fires on every real pointer movement regardless (same event SortableJS itself
+// listens to for forceFallback dragging, mouse or touch alike; native 'dragover' never fires
+// once forceFallback is on, since Sortable stops using real HTML5 drag events for it).
 function attachNestTracking(draggedItem) {
-  dragPointerHandler = event => {
-    const point = getPointerCoordinates(event);
-    if (point) {
-      updateNestIntent(draggedItem, point);
+  let pendingPoint = null;
+
+  const flush = () => {
+    dragNestRafId = null;
+    if (pendingPoint) {
+      updateNestIntent(draggedItem, pendingPoint);
     }
   };
-  document.addEventListener('dragover', dragPointerHandler, true);
+
+  // Pointermove can fire far more often than the display refreshes (some mice/trackpads report
+  // well past 60Hz). Doing the DOM work (clearTaskDropTargets + the previousElementSibling walk)
+  // synchronously on every single event competes with Sortable's own per-frame clone repositioning
+  // for the same main-thread frame budget, which is what made the drag ghost visibly lag behind the
+  // cursor. Coalescing to at most one update per animation frame keeps it in sync with rendering.
+  dragPointerHandler = event => {
+    const point = getPointerCoordinates(event);
+    if (!point) return;
+    pendingPoint = point;
+    if (dragNestRafId == null) {
+      dragNestRafId = requestAnimationFrame(flush);
+    }
+  };
+  document.addEventListener('pointermove', dragPointerHandler, true);
   document.addEventListener('touchmove', dragPointerHandler, true);
 }
 
 function detachNestTracking(draggedItem) {
+  if (dragNestRafId != null) {
+    cancelAnimationFrame(dragNestRafId);
+    dragNestRafId = null;
+  }
   if (dragPointerHandler) {
-    document.removeEventListener('dragover', dragPointerHandler, true);
+    document.removeEventListener('pointermove', dragPointerHandler, true);
     document.removeEventListener('touchmove', dragPointerHandler, true);
     dragPointerHandler = null;
   }
@@ -414,9 +443,9 @@ function resolveNestParentForCard(card) {
     return null;
   }
 
-  const cardLabel = card.dataset.labelId;
-  const parentLabel = rootCard.dataset.labelId;
-  if (cardLabel && parentLabel && cardLabel !== parentLabel) {
+  // A subtask must always carry the same label as its parent (or none, matching a labelless
+  // parent) — block the nest client-side rather than let the server 400 it after the fact.
+  if (card.dataset.labelId !== rootCard.dataset.labelId) {
     return null;
   }
 
@@ -2457,7 +2486,10 @@ function commitMobileTaskSwipe(card) {
     targetColumnId: columnId,
     newPosition: getTaskIndex(card),
     parentTaskId
-  }).catch(() => location.reload());
+  }).catch(async error => {
+    await showAlertModal(await extractApiErrorMessage(error, 'No he podido mover la tarea.'));
+    location.reload();
+  });
 }
 
 function clearMobileTaskSwipeState() {
@@ -2594,7 +2626,19 @@ function handleCpickerTriggerKeydown(event, pickerId) {
   toggleCpicker(pickerId);
 }
 
+// A subtask always carries its parent's label — lock the picker instead of letting the user
+// pick a different one and silently detach it (see setLabelSelection).
+function syncLabelPickerLock() {
+  const el = document.getElementById('labelCpicker');
+  if (!el) return;
+  const locked = Boolean(currentParentTaskId);
+  el.classList.toggle('cpicker-locked', locked);
+  document.getElementById('labelCpickerTrigger')?.setAttribute('aria-disabled', locked ? 'true' : 'false');
+  if (locked) closeCpicker('labelCpicker');
+}
+
 function toggleCpicker(id) {
+  if (id === 'labelCpicker' && currentParentTaskId) return;
   const el = document.getElementById(id);
   if (!el) return;
   if (el.classList.contains('is-open')) {
@@ -2740,6 +2784,7 @@ function openTask(taskId) {
       switchModalTab('details');
 
       renderParentPicker();
+      syncLabelPickerLock();
       renderLabelPicker();
       renderModalSubtasks(task);
       showModal();
@@ -3107,8 +3152,9 @@ function setParentSelection(parentTaskId, columnId) {
   if (currentParentTaskId) {
     const selectedParent = collectParentOptions().find(option => option.id === currentParentTaskId);
     currentLabelId = selectedParent?.labelId || null;
-    renderLabelPicker();
   }
+  syncLabelPickerLock();
+  renderLabelPicker();
   renderParentPicker();
 }
 
