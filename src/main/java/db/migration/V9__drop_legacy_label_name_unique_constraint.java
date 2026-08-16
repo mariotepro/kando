@@ -38,12 +38,18 @@ public class V9__drop_legacy_label_name_unique_constraint extends BaseJavaMigrat
         // constraintName comes from information_schema (database metadata, not user input), but
         // identifiers can't be bound as PreparedStatement parameters, so it's interpolated below —
         // validate it looks like a plain SQL identifier first as defense in depth.
-        if (constraintName == null || !constraintName.matches("[A-Za-z0-9_]+")) {
+        if (constraintName == null || !constraintName.matches("\\w+")) {
             return;
         }
 
+        // S2077 flags this unconditionally (it doesn't do taint analysis, see the rule's own
+        // description) even though constraintName is read-only database metadata that was just
+        // validated above as a plain identifier, not attacker-controlled input. Identifiers can't
+        // be bound as PreparedStatement parameters, which is why this is interpolated at all.
+        @SuppressWarnings("java:S2077")
+        String dropConstraintSql = "alter table label drop constraint \"" + constraintName + "\"";
         try (Statement statement = context.getConnection().createStatement()) {
-            statement.execute("alter table label drop constraint \"" + constraintName + "\"");
+            statement.execute(dropConstraintSql);
         }
     }
 }
